@@ -3,9 +3,13 @@
 A one-page app for a pharmacy to log what each medical rep orders: item, quantity,
 bonus (`10+2`), delivery date, and whether it arrived. English and Arabic, RTL included.
 
-At setup the pharmacy can have the app **make its own QR code and print it** as a
-counter sign; reps scan that to log an order. Re-print it any time from
-Summary → *Print the counter sign*.
+Every pharmacy gets **its own QR code automatically** at setup — type the name, print
+the counter sign. Re-print it any time from Summary → *Print the counter sign*.
+
+The sign holds a link (`…/#p=CODE&n=NAME`), not a bare code, so scanning it opens the
+app rather than showing raw text. Opened on the pharmacy's own phone it goes straight
+to a new order, which is what the scan was for. Opened anywhere else it says plainly
+that the log lives on the pharmacy's phone — orders do **not** travel between devices.
 
 No build step, no server, no accounts. Every pharmacy's data stays on their own phone.
 

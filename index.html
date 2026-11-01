@@ -152,11 +152,12 @@ h2{font-size:15px;margin:0 0 12px}
   <!-- setup: no pharmacy QR stored yet -->
   <section id="setup" hidden>
     <div class="scan">
-      <button class="btn pri" id="setupScan" data-t="Scan your pharmacy QR">Scan your pharmacy QR</button>
-      <p data-t="Any QR code you keep at the counter works — a sticker, your licence card, a code you print once. The app remembers it and every rep scans that same code.">Any QR code you keep at the counter works — a sticker, your licence card, a code you print once. The app remembers it and every rep scans that same code.</p>
-      <p><button class="btn" id="setupMake" data-t="Make one for me to print">Make one for me to print</button>
-      <button class="btn" id="setupType" data-t="Type a code instead">Type a code instead</button>
-      <button class="btn" id="setupSkip" data-t="Skip — just log orders">Skip — just log orders</button></p>
+      <h2 data-t="Set up your pharmacy">Set up your pharmacy</h2>
+      <p data-t="Your pharmacy gets its own QR code. Print it once, keep it at the counter, and every rep scans that same code.">Your pharmacy gets its own QR code. Print it once, keep it at the counter, and every rep scans that same code.</p>
+      <div class="field"><label for="pn0" data-t="Pharmacy name">Pharmacy name</label>
+        <input id="pn0" autocomplete="organization"></div>
+      <button class="btn pri" id="setupGo" data-t="Create it and show my QR">Create it and show my QR</button>
+      <p><button class="btn" id="setupScan" data-t="Use a QR code I already have">Use a QR code I already have</button></p>
     </div>
   </section>
 
@@ -177,9 +178,13 @@ h2{font-size:15px;margin:0 0 12px}
     <div class="scan">
       <button class="btn pri" id="gateScan" data-t="Open camera">Open camera</button>
       <p data-t="Point at the pharmacy's QR code and take the photo.">Point at the pharmacy's QR code and take the photo.</p>
-      <p><button class="btn" id="gateType" data-t="Type the code">Type the code</button></p>
+      <p><button class="btn" id="gateType" data-t="Type the code">Type the code</button>
+      <button class="btn" id="gateSkip" data-t="I am the pharmacy — just open it">I am the pharmacy — just open it</button></p>
     </div>
   </section>
+
+  <!-- someone opened a pharmacy's sign link on a phone that is not that pharmacy's -->
+  <section id="away" hidden></section>
 
   <!-- order form -->
   <section id="form" hidden>
@@ -284,6 +289,19 @@ function newCode(bytes){
   const n = bytes || crypto.getRandomValues(new Uint8Array(6));
   return "PH-" + Array.from(n, b => CODE_A[b % CODE_A.length]).join("");
 }
+// The sign holds a link, not a bare code, so a rep's own camera lands somewhere useful
+// instead of showing them "PH-96FTFE" and nothing else.
+function signURL(base, code, name){
+  return base + "#p=" + encodeURIComponent(code) + (name ? "&n=" + encodeURIComponent(name) : "");
+}
+function linkField(s, key){
+  const m = String(s==null?"":s).match(new RegExp("[#&]"+key+"=([^&]*)"));
+  if(!m) return null;
+  try{ return decodeURIComponent(m[1]) }catch(e){ return m[1] }
+}
+function codeFromScan(s){               // a sign link, or a code typed or scanned on its own
+  return linkField(s,"p") ?? String(s==null?"":s).trim();
+}
 function qrSvg(count, isDark){          // 4 modules of quiet zone, or phones will not see the code
   const q = 4, side = count + q*2, out = [];
   for(let r=0;r<count;r++) for(let c=0;c<count;c++)
@@ -353,6 +371,18 @@ function selfcheck(){
   eq(sv.split("<rect").length-1,4,"one background rect plus one per dark module");
   eq(sv.indexOf('<rect x="4" y="4" width="1" height="1"/>')>0,true,"module 0,0 sits inside the quiet zone");
   eq(qrSvg(3,()=>false).indexOf("<g fill=\"#000\"></g>")>0,true,"an all-light matrix draws no modules");
+
+  const B = "https://x.github.io/pharmacy-orders/";
+  eq(signURL(B,"PH-ACDEFG","Al Noor"),B+"#p=PH-ACDEFG&n=Al%20Noor","the sign links back to the app");
+  eq(signURL(B,"PH-ACDEFG",""),B+"#p=PH-ACDEFG","an unnamed pharmacy still gets a link");
+  eq(codeFromScan(signURL(B,"PH-ACDEFG","Al Noor")),"PH-ACDEFG","the code survives the round trip");
+  eq(linkField(signURL(B,"PH-ACDEFG","Al Noor"),"n"),"Al Noor","so does a name with a space");
+  eq(linkField(signURL(B,"PH-ACDEFG","صيدلية النور"),"n"),"صيدلية النور","and an Arabic name");
+  eq(codeFromScan("PH-ACDEFG"),"PH-ACDEFG","a bare scanned code still works");
+  eq(codeFromScan("  PH-ACDEFG "),"PH-ACDEFG","a typed code is trimmed");
+  eq(codeFromScan("https://other.example/#p=PH-ACDEFG"),"PH-ACDEFG","a link from any host reads the same");
+  eq(codeFromScan("100%"),"100%","a stray percent does not throw");
+  eq(linkField("PH-ACDEFG","n"),null,"a bare code carries no name");
   return t;
 }
 /*endpure*/
@@ -431,6 +461,14 @@ const AR = {
  "Medical reps: scan to log an order":"المندوبون: امسح الرمز لتسجيل طلب",
  "Print it and keep it at the counter. The code under the QR is the same thing typed out, for a rep whose camera will not focus.":"اطبعها واتركها عند الكاونتر. الرمز المكتوب تحت الـ QR هو نفسه، لمندوب لا تضبط كاميرته التصوير.",
  "Print":"طباعة",
+ "Set up your pharmacy":"إعداد صيدليتك",
+ "Your pharmacy gets its own QR code. Print it once, keep it at the counter, and every rep scans that same code.":"تحصل صيدليتك على رمز QR خاص بها. اطبعه مرة واحدة واتركه عند الكاونتر، ويمسحه كل مندوب.",
+ "Create it and show my QR":"أنشئها وأظهر الرمز",
+ "Use a QR code I already have":"استخدم رمزاً لديّ بالفعل",
+ "I am the pharmacy — just open it":"أنا الصيدلية — افتحها مباشرة",
+ "Another pharmacy":"صيدلية أخرى",
+ "You opened the counter code for this pharmacy. Their order log sits on their own phone, so an order typed here would not reach them — hand them the phone, or ask them to open their app.":"فتحت رمز الكاونتر الخاص بهذه الصيدلية. سجل طلباتها موجود على هاتفهم، لذا لن يصلهم أي طلب يُكتب هنا — ناولهم الهاتف أو اطلب منهم فتح التطبيق.",
+ "Open my own order log":"افتح سجل طلباتي",
  "Save the sign":"احفظ اللوحة",
  "Could not save the sign.":"تعذّر حفظ اللوحة.",
  "Print the counter sign":"اطبع لوحة الكاونتر",
@@ -548,7 +586,7 @@ async function scan(){
 /* ---------- screens ---------- */
 function show(name){
   screen = name;
-  for(const s of ["setup","list","gate","form","check","qr"]) $(s).hidden = (s !== name);
+  for(const s of ["setup","list","gate","form","check","qr","away"]) $(s).hidden = (s !== name);
   $("bar").hidden = (name !== "list") || !S.pharmacy;
   window.scrollTo(0,0);
 }
@@ -757,9 +795,9 @@ $("cancel").onclick = () => { show("list"); renderList() };
 
 $("newOrder").onclick = () => S.pharmacy.code ? show("gate") : openForm();
 $("gateScan").onclick = async () => {
-  const code = await scan();
-  if(!code) return;
-  if(code === S.pharmacy.code) openForm();
+  const scanned = await scan();
+  if(!scanned) return;
+  if(codeFromScan(scanned) === S.pharmacy.code) openForm();
   else flash(T("That code is not this pharmacy's. Scan the code at the counter."), true);
 };
 $("gateType").onclick = () => {
@@ -773,20 +811,25 @@ $("gateType").onclick = () => {
   };
   $("gateType").disabled = true;
 };
+$("gateSkip").onclick = () => openForm();     // the phone belongs to the pharmacy; the gate is for reps
 
-$("setupScan").onclick = async () => {
-  const code = await scan();
-  if(code) nameIt(code);
+// A sign link was opened (scanned, tapped, shared). Acts as the gate when it is our own code.
+function fromLink(){
+  if(location.hash.indexOf("#p=") !== 0) return false;
+  const code = codeFromScan(location.hash), name = linkField(location.hash,"n") || "";
+  history.replaceState(null, "", location.pathname + location.search);   // survive a reload
+  if(S.pharmacy && S.pharmacy.code === code) openForm();
+  else elsewhere(code, name);
+  return true;
+}
+
+$("setupGo").onclick = () => {
+  S.pharmacy = {code:newCode(), name:$("pn0").value.trim() || T("My pharmacy")};
+  putSettings(); showQR();
 };
-$("setupSkip").onclick = () => nameIt("");
-$("setupMake").onclick = () => nameIt(newCode(), true);
-$("setupType").onclick = () => {
-  const el = document.createElement("div");
-  el.innerHTML = '<div class="field"><label for="sc">'+T("Any code you will keep using")+'</label><input id="sc"></div>'
-    + '<button class="btn pri" id="scok">'+T("Continue")+'</button>';
-  $("setup").append(el);
-  $("scok").onclick = () => { const v = $("sc").value.trim(); if(v){ el.remove(); nameIt(v) } };
-  $("setupType").disabled = true;
+$("setupScan").onclick = async () => {              // a pharmacy that already has a sticker it likes
+  const scanned = await scan();
+  if(scanned) nameIt(codeFromScan(scanned));
 };
 function nameIt(code, made){
   $("setup").innerHTML = '<h2>'+T(made?"Your code is ready":code?"Code saved":"Set up")+'</h2>'
@@ -803,6 +846,20 @@ function nameIt(code, made){
     if(made) return showQR();
     screen = "list"; render();
   };
+}
+
+const appBase = () => location.origin + location.pathname;
+
+// A sign link opened somewhere that is not this pharmacy. Today the honest answer is that
+// the log lives on their phone; this is where a rep-side submission would plug in.
+function elsewhere(code, name){
+  $("away").innerHTML = '<h2>' + esc(name || T("Another pharmacy")) + '</h2>'
+    + '<div class="scan"><p>'
+    + T("You opened the counter code for this pharmacy. Their order log sits on their own phone, so an order typed here would not reach them — hand them the phone, or ask them to open their app.")
+    + '</p><p class="code">' + esc(code) + '</p>'
+    + '<p><button class="btn" id="awayBack">' + T("Open my own order log") + '</button></p></div>';
+  $("awayBack").onclick = () => { screen = "list"; render() };
+  show("away");
 }
 
 // encode -> the SVG we actually print -> raster -> jsQR. Proves a rep's phone can read the sign.
@@ -824,7 +881,7 @@ function showQR(){
   const code = S.pharmacy?.code;
   if(!code) return flash(T("This pharmacy has no code to print."), true);
   const q = qrcode(0, "M");                 // 0 = pick the smallest size that fits
-  q.addData(code); q.make();
+  q.addData(signURL(appBase(), code, S.pharmacy.name)); q.make();
   $("qr").innerHTML = '<h2>'+T("Your counter sign")+'</h2>'
     + '<div class="sign"><h3>'+esc(S.pharmacy.name)+'</h3>'
     + '<p class="ask">'+T("Medical reps: scan to log an order")+'</p>'
@@ -868,7 +925,12 @@ $("langBtn").onclick = () => setLang(lang === "ar" ? "en" : "ar");
 let want = "en";
 try{ want = localStorage.getItem("pharmLang")
        || ((navigator.language||"").toLowerCase().indexOf("ar")===0 ? "ar" : "en") }catch(e){}
-load(); setLang(want); connect();
+load();
+// every pharmacy has a code now, including one set up before the app generated them
+if(S.pharmacy && !S.pharmacy.code){ S.pharmacy.code = newCode(); save() }
+setLang(want); fromLink(); connect();
+// a sign link opened while the app is already running changes the hash without reloading
+addEventListener("hashchange", fromLink);
 if("serviceWorker" in navigator && location.protocol.indexOf("http") === 0)
   navigator.serviceWorker.register("sw.js").catch(()=>{});   // absent inside Claude; harmless
 </script>

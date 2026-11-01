@@ -1,5 +1,5 @@
 // Bump CACHE on every deploy so old files are dropped.
-const CACHE = "pharmacy-orders-v2";
+const CACHE = "pharmacy-orders-v3";
 const CORE = ["./", "./index.html", "./manifest.webmanifest",
               "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 

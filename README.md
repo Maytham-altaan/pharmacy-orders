@@ -3,6 +3,10 @@
 A one-page app for a pharmacy to log what each medical rep orders: item, quantity,
 bonus (`10+2`), delivery date, and whether it arrived. English and Arabic, RTL included.
 
+At setup the pharmacy can have the app **make its own QR code and print it** as a
+counter sign; reps scan that to log an order. Re-print it any time from
+Summary → *Print the counter sign*.
+
 No build step, no server, no accounts. Every pharmacy's data stays on their own phone.
 
 **Live:** https://maytham-altaan.github.io/pharmacy-orders/ — open it on a phone and
@@ -18,7 +22,12 @@ use *Add to Home Screen*.
 | `icon-*.png`, `apple-touch-icon.png` | home-screen icons |
 | `sw.test.js` | `node sw.test.js` — checks the cache logic |
 
-The app's own checks live in `index.html`: open it at `#selfcheck`, or run them headless:
+Two CDN scripts, both pinned: `jsqr` reads a QR, `qrcode-generator` writes one.
+The service worker caches both, so the app still scans and prints offline.
+
+The app's own checks live in `index.html`: open it at `#selfcheck`, or run them headless.
+`#selfcheck` also runs one check node cannot: it encodes a code, rasterises the SVG the
+sign actually prints, and decodes it back with `jsQR` — proof a rep's phone will read it.
 
 ```
 node -e 'const s=require("fs").readFileSync("index.html","utf8");eval(s.split("/*pure*/")[1].split("/*endpure*/")[0]);const r=selfcheck();console.log(r.filter(x=>!x[0]).length?"FAILED":"all "+r.length+" pass")'

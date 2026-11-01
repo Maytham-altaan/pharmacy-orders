@@ -121,6 +121,24 @@ h2{font-size:15px;margin:0 0 12px}
 .lang{margin-inline-start:auto;border:1px solid var(--line);background:var(--surface);color:var(--fg-dim);
   border-radius:999px;padding:3px 11px;font-size:12px;font-weight:500;cursor:pointer}
 @media (prefers-reduced-motion:no-preference){.card{transition:border-color .15s}}
+
+/* the counter sign stays black-on-white whatever the app theme — a dark QR does not scan */
+.sign{background:#fff;border:1px solid var(--line);border-radius:12px;padding:22px 16px;text-align:center}
+.sign h3{margin:0;font-size:17px;color:#111}
+.sign .ask{margin:4px 0 16px;font-size:13px;color:#555}
+.sign svg{display:block;margin:0 auto;width:min(64vw,250px);height:auto}
+.sign .pc{margin:14px 0 0;font-family:var(--mono);font-size:16px;letter-spacing:.08em;color:#111}
+.sign .pc,.sign .ask{direction:ltr;unicode-bidi:isolate}
+@media print{
+  @page{margin:14mm}
+  body{background:#fff}
+  body *{visibility:hidden}
+  #qr,#qr *{visibility:visible}
+  #qr{position:absolute;top:0;inset-inline-start:0;width:100%}
+  #qr h2,#qr .acts,#qr .note{display:none}
+  .sign{border:none;padding:0}
+  .sign svg{width:78mm}
+}
 </style>
 
 <div class="wrap">
@@ -136,7 +154,8 @@ h2{font-size:15px;margin:0 0 12px}
     <div class="scan">
       <button class="btn pri" id="setupScan" data-t="Scan your pharmacy QR">Scan your pharmacy QR</button>
       <p data-t="Any QR code you keep at the counter works — a sticker, your licence card, a code you print once. The app remembers it and every rep scans that same code.">Any QR code you keep at the counter works — a sticker, your licence card, a code you print once. The app remembers it and every rep scans that same code.</p>
-      <p><button class="btn" id="setupType" data-t="Type a code instead">Type a code instead</button>
+      <p><button class="btn" id="setupMake" data-t="Make one for me to print">Make one for me to print</button>
+      <button class="btn" id="setupType" data-t="Type a code instead">Type a code instead</button>
       <button class="btn" id="setupSkip" data-t="Skip — just log orders">Skip — just log orders</button></p>
     </div>
   </section>
@@ -184,6 +203,9 @@ h2{font-size:15px;margin:0 0 12px}
   </section>
 
   <section id="check" hidden></section>
+
+  <!-- the sign that goes on the counter -->
+  <section id="qr" hidden></section>
 </div>
 
 <div class="bar" id="bar" hidden><div class="wrap">
@@ -193,6 +215,7 @@ h2{font-size:15px;margin:0 0 12px}
 <input type="file" id="cam" accept="image/*" capture="environment" hidden>
 
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <script>
 /*pure*/
 function parseQty(s){                         // "10+2" -> {qty:10,bonus:2}
@@ -255,6 +278,21 @@ function sheet(list,pharmacy,sep,t){                 // ="0770..." keeps Excel f
     (i && c===2 && sep===",") ? '="'+String(v).replace(/"/g,"")+'"' : cell(v,sep)
   ).join(sep)).join("\r\n");
 }
+const CODE_A = "ACDEFGHJKLMNPQRTUVWXY34679";   // no O/0 I/1 S/5 B/8 Z/2 — this gets read down a phone
+function newCode(bytes){
+  // ponytail: ~1% modulo bias per character; this names a counter, it is not a key
+  const n = bytes || crypto.getRandomValues(new Uint8Array(6));
+  return "PH-" + Array.from(n, b => CODE_A[b % CODE_A.length]).join("");
+}
+function qrSvg(count, isDark){          // 4 modules of quiet zone, or phones will not see the code
+  const q = 4, side = count + q*2, out = [];
+  for(let r=0;r<count;r++) for(let c=0;c<count;c++)
+    if(isDark(r,c)) out.push('<rect x="'+(c+q)+'" y="'+(r+q)+'" width="1" height="1"/>');
+  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+side+' '+side+'" '
+    + 'shape-rendering="crispEdges" role="img"><rect width="'+side+'" height="'+side+'" fill="#fff"/>'
+    + '<g fill="#000">'+out.join("")+'</g></svg>';
+}
+
 function selfcheck(){
   const t=[], eq=(a,b,m)=>t.push([JSON.stringify(a)===JSON.stringify(b),m,a,b]);
   eq(parseQty("10+2"),{qty:10,bonus:2},"10+2");
@@ -304,6 +342,17 @@ function selfcheck(){
   eq(sheet(fix,"Al Noor","\t").split("\r\n")[1].split("\t")[2],"07701234567","TSV keeps it plain");
   eq(csv[2].indexOf('"Panadol, 24s"')>0,true,"item name with a comma is quoted in the row");
   eq(csv[1].indexOf('"he said ""leave it"""')>0,true,"a note with quotes survives the round trip");
+
+  eq(newCode(new Uint8Array([0,1,2,3,4,5])),"PH-ACDEFG","code built from the alphabet in order");
+  eq(newCode(new Uint8Array([25,26,51,52,255,254])),"PH-9A9A3Y","byte values wrap round the alphabet");
+  eq(/^PH-[A-Z0-9]{6}$/.test(newCode()),true,"a fresh code has the shape reps will read out");
+  eq(/[01IOSBZ258]/.test(CODE_A),false,"no character anyone can misread over the phone");
+  eq(new Set(CODE_A).size,CODE_A.length,"alphabet has no duplicate characters");
+  const diag = (r,c)=>r===c, sv = qrSvg(3,diag);
+  eq(sv.indexOf('viewBox="0 0 11 11"')>0,true,"3 modules plus 4 of quiet zone each side");
+  eq(sv.split("<rect").length-1,4,"one background rect plus one per dark module");
+  eq(sv.indexOf('<rect x="4" y="4" width="1" height="1"/>')>0,true,"module 0,0 sits inside the quiet zone");
+  eq(qrSvg(3,()=>false).indexOf("<g fill=\"#000\"></g>")>0,true,"an all-light matrix draws no modules");
   return t;
 }
 /*endpure*/
@@ -374,7 +423,16 @@ const AR = {
  "Nothing to export yet.":"لا توجد طلبات للتصدير.",
  "{n} lines saved to {f}":"تم حفظ {n} سطر في الملف {f}",
  "{n} lines copied — paste straight into Excel or Sheets.":"تم نسخ {n} سطر — الصقها مباشرة في Excel أو Sheets.",
- "This browser blocked both the download and the clipboard. Try the Claude app.":"المتصفح منع التنزيل والنسخ. جرّب تطبيق Claude."
+ "This browser blocked both the download and the clipboard. Try the Claude app.":"المتصفح منع التنزيل والنسخ. جرّب تطبيق Claude.",
+ "Make one for me to print":"أنشئ لي رمزاً لأطبعه",
+ "Your code is ready":"رمزك جاهز",
+ "Name the pharmacy and you can print the sign.":"أدخل اسم الصيدلية ثم اطبع اللوحة.",
+ "Your counter sign":"لوحة الكاونتر",
+ "Medical reps: scan to log an order":"المندوبون: امسح الرمز لتسجيل طلب",
+ "Print it and keep it at the counter. The code under the QR is the same thing typed out, for a rep whose camera will not focus.":"اطبعها واتركها عند الكاونتر. الرمز المكتوب تحت الـ QR هو نفسه، لمندوب لا تضبط كاميرته التصوير.",
+ "Print":"طباعة",
+ "Print the counter sign":"اطبع لوحة الكاونتر",
+ "This pharmacy has no code to print.":"لا يوجد رمز لهذه الصيدلية لطباعته."
 };
 const MISS = new Set();
 let lang = "en";
@@ -488,7 +546,7 @@ async function scan(){
 /* ---------- screens ---------- */
 function show(name){
   screen = name;
-  for(const s of ["setup","list","gate","form","check"]) $(s).hidden = (s !== name);
+  for(const s of ["setup","list","gate","form","check","qr"]) $(s).hidden = (s !== name);
   $("bar").hidden = (name !== "list") || !S.pharmacy;
   window.scrollTo(0,0);
 }
@@ -555,7 +613,11 @@ function repsHTML(){
 }
 function summaryHTML(){
   const list = Object.values(S.orders);
-  if(!list.length) return '<div class="empty">'+T("Nothing to summarise yet. Log an order first.")+'</div>';
+  // the sign has to stay reachable on day one, before there is anything to summarise
+  const sign = S.pharmacy?.code
+    ? '<button class="btn" data-qr="1">'+T("Print the counter sign")+'</button>' : '';
+  if(!list.length) return '<div class="empty">'+T("Nothing to summarise yet. Log an order first.")+'</div>'
+    + (sign ? '<div class="acts">'+sign+'</div>' : '');
   const s = summarise(list, todayISO());
   const maxUnits = Math.max(...s.reps.map(r=>r.units), 1);
   const maxQty = Math.max(...s.items.map(i=>i.qty), 1);
@@ -592,7 +654,7 @@ function summaryHTML(){
     + (s.items.length>12 ? '<p class="note">'+T("{n} more items not shown")
         .replace("{n}",s.items.length-12)+'</p>' : '')
     + '</div><div class="acts"><button class="btn" data-export="1">'
-    + T("Export every order as CSV")+'</button></div>';
+    + T("Export every order as CSV")+'</button>'+sign+'</div>';
 }
 async function exportCSV(){
   const list = Object.values(S.orders)
@@ -624,8 +686,12 @@ function renderCheck(){
   const rows = selfcheck(), bad = rows.filter(r=>!r[0]).length;
   $("check").innerHTML = '<h2>'+(bad?bad+" failed":"All "+rows.length+" checks pass")+'</h2>'
     + (MISS.size ? '<p class="note">Untranslated: '+esc([...MISS].join(" | "))+'</p>' : '')
+    + '<p class="note" id="rt">… encoding a QR and reading it back</p>'
     + rows.map(r=>'<p class="note">'+(r[0]?"ok":"FAIL")+' — '+esc(r[1])
       + (r[0]?"":' got <span class="code">'+esc(JSON.stringify(r[2]))+'</span>')+'</p>').join("");
+  qrRoundTrip().then(r => { $("rt").innerHTML = (r[0]?"ok":"FAIL")+' — '+esc(r[1])
+      + (r[0]?"":' got <span class="code">'+esc(String(r[2]))+'</span>') })
+    .catch(e => { $("rt").textContent = "FAIL — the round trip threw: " + e });
 }
 
 /* ---------- form ---------- */
@@ -711,6 +777,7 @@ $("setupScan").onclick = async () => {
   if(code) nameIt(code);
 };
 $("setupSkip").onclick = () => nameIt("");
+$("setupMake").onclick = () => nameIt(newCode(), true);
 $("setupType").onclick = () => {
   const el = document.createElement("div");
   el.innerHTML = '<div class="field"><label for="sc">'+T("Any code you will keep using")+'</label><input id="sc"></div>'
@@ -719,9 +786,10 @@ $("setupType").onclick = () => {
   $("scok").onclick = () => { const v = $("sc").value.trim(); if(v){ el.remove(); nameIt(v) } };
   $("setupType").disabled = true;
 };
-function nameIt(code){
-  $("setup").innerHTML = '<h2>'+T(code?"Code saved":"Set up")+'</h2>'
-    + (code ? '<p class="note">'+T("Reps will scan this code:")
+function nameIt(code, made){
+  $("setup").innerHTML = '<h2>'+T(made?"Your code is ready":code?"Code saved":"Set up")+'</h2>'
+    + (code ? '<p class="note">'+T(made?"Name the pharmacy and you can print the sign."
+                                       :"Reps will scan this code:")
               + ' <span class="code">'+esc(code)+'</span></p>' : '')
     + '<div class="field" style="margin-top:14px"><label for="pn">'+T("Pharmacy name")
     + '</label><input id="pn"></div>'
@@ -729,8 +797,43 @@ function nameIt(code){
   $("pn").focus();
   $("pnok").onclick = () => {
     S.pharmacy = {code, name:$("pn").value.trim() || T("My pharmacy")};
-    putSettings(); screen = "list"; render();
+    putSettings();
+    if(made) return showQR();
+    screen = "list"; render();
   };
+}
+
+// encode -> the SVG we actually print -> raster -> jsQR. Proves a rep's phone can read the sign.
+async function qrRoundTrip(){
+  const code = newCode();
+  const q = qrcode(0, "M"); q.addData(code); q.make();
+  const svg = qrSvg(q.getModuleCount(), q.isDark);
+  const px = (q.getModuleCount() + 8) * 8;
+  const img = new Image();
+  await new Promise((ok,no)=>{ img.onload = ok; img.onerror = no;
+    img.src = "data:image/svg+xml;base64," + btoa(svg) });
+  const cv = document.createElement("canvas"); cv.width = cv.height = px;
+  cv.getContext("2d").drawImage(img, 0, 0, px, px);
+  const got = jsQR(cv.getContext("2d").getImageData(0,0,px,px).data, px, px);
+  return [got?.data === code, "the printed sign decodes back to " + code, got?.data ?? null];
+}
+
+function showQR(){
+  const code = S.pharmacy?.code;
+  if(!code) return flash(T("This pharmacy has no code to print."), true);
+  const q = qrcode(0, "M");                 // 0 = pick the smallest size that fits
+  q.addData(code); q.make();
+  $("qr").innerHTML = '<h2>'+T("Your counter sign")+'</h2>'
+    + '<div class="sign"><h3>'+esc(S.pharmacy.name)+'</h3>'
+    + '<p class="ask">'+T("Medical reps: scan to log an order")+'</p>'
+    + qrSvg(q.getModuleCount(), q.isDark)
+    + '<p class="pc">'+esc(code)+'</p></div>'
+    + '<p class="note">'+T("Print it and keep it at the counter. The code under the QR is the same thing typed out, for a rep whose camera will not focus.")+'</p>'
+    + '<div class="acts"><button class="btn pri" id="qrPrint">'+T("Print")+'</button>'
+    + '<button class="btn" id="qrBack">'+T("Done")+'</button></div>';
+  $("qrPrint").onclick = () => window.print();   // inert inside Claude, works on the hosted site
+  $("qrBack").onclick = () => { screen = "list"; render() };
+  show("qr");
 }
 
 $("rows").addEventListener("click", async e=>{
@@ -743,6 +846,7 @@ $("rows").addEventListener("click", async e=>{
     dropOrder(d.del);
   }
   else if(d.export){ exportCSV() }
+  else if(d.qr){ showQR() }
   else if(d.copy){
     try{ await navigator.clipboard.writeText(d.copy); flash(T("Copied {n}").replace("{n}", d.copy)) }
     catch(err){ flash(T("Number: {n}").replace("{n}", d.copy)) }

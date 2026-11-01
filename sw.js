@@ -1,5 +1,5 @@
 // Bump CACHE on every deploy so old files are dropped.
-const CACHE = "pharmacy-orders-v1";
+const CACHE = "pharmacy-orders-v2";
 const CORE = ["./", "./index.html", "./manifest.webmanifest",
               "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 
@@ -26,7 +26,7 @@ self.addEventListener("fetch", e => {
     return;
   }
 
-  // Everything else (fonts, the QR decoder): cached copy first, then the network.
+  // Everything else (fonts, the QR decoder and encoder): cached copy first, then the network.
   e.respondWith(caches.match(req).then(hit =>
     hit || fetch(req).then(r => {
       if (r.ok || r.type === "opaque") { const copy = r.clone(); caches.open(CACHE).then(c => c.put(req, copy)) }

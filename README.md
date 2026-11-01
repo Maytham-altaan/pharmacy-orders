@@ -5,6 +5,9 @@ bonus (`10+2`), delivery date, and whether it arrived. English and Arabic, RTL i
 
 No build step, no server, no accounts. Every pharmacy's data stays on their own phone.
 
+**Live:** https://maytham-altaan.github.io/pharmacy-orders/ — open it on a phone and
+use *Add to Home Screen*.
+
 ## Files
 
 | File | |

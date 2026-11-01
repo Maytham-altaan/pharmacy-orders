@@ -431,6 +431,8 @@ const AR = {
  "Medical reps: scan to log an order":"المندوبون: امسح الرمز لتسجيل طلب",
  "Print it and keep it at the counter. The code under the QR is the same thing typed out, for a rep whose camera will not focus.":"اطبعها واتركها عند الكاونتر. الرمز المكتوب تحت الـ QR هو نفسه، لمندوب لا تضبط كاميرته التصوير.",
  "Print":"طباعة",
+ "Save the sign":"احفظ اللوحة",
+ "Could not save the sign.":"تعذّر حفظ اللوحة.",
  "Print the counter sign":"اطبع لوحة الكاونتر",
  "This pharmacy has no code to print.":"لا يوجد رمز لهذه الصيدلية لطباعته."
 };
@@ -829,9 +831,16 @@ function showQR(){
     + qrSvg(q.getModuleCount(), q.isDark)
     + '<p class="pc">'+esc(code)+'</p></div>'
     + '<p class="note">'+T("Print it and keep it at the counter. The code under the QR is the same thing typed out, for a rep whose camera will not focus.")+'</p>'
-    + '<div class="acts"><button class="btn pri" id="qrPrint">'+T("Print")+'</button>'
+    + '<div class="acts"><button class="btn pri" id="qrPrint">'
+    + T(window.claude ? "Save the sign" : "Print")+'</button>'
     + '<button class="btn" id="qrBack">'+T("Done")+'</button></div>';
-  $("qrPrint").onclick = () => window.print();   // inert inside Claude, works on the hosted site
+  // window.print() does nothing inside Claude, so there the sign is saved as a file instead
+  $("qrPrint").onclick = async () => {
+    const dl = window.claude && await window.claude.use("downloads");
+    if(!dl) return window.print();
+    try{ await dl.save({filename:"counter-sign.svg", data:$("qr").querySelector("svg").outerHTML}) }
+    catch(e){ if(e?.code !== "declined") flash(T("Could not save the sign."), true) }
+  };
   $("qrBack").onclick = () => { screen = "list"; render() };
   show("qr");
 }

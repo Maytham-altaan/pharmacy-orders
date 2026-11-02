@@ -328,6 +328,11 @@ function unpackOrder(s, code){
   return {rep:{mobile:String(o.m), first:String(o.f||""), last:String(o.l||"")},
     items, due:String(o.d||""), note:String(o.n||"")};
 }
+// What a rep keeps on their own phone about an order they handed over.
+function handedOrder(h){ return {rep:h.rep, items:h.items, due:h.due, note:h.note} }
+function byNewest(list){
+  return list.slice().sort((a,b)=>String(b.created).localeCompare(String(a.created)));
+}
 function qrSvg(count, isDark){          // 4 modules of quiet zone, or phones will not see the code
   const q = 4, side = count + q*2, out = [];
   for(let r=0;r<count;r++) for(let c=0;c<count;c++)
@@ -426,6 +431,17 @@ function selfcheck(){
   eq(unpackOrder('{"v":1,"p":"PH-ACDEFG","m":"1","i":[["",5,0]]}',"PH-ACDEFG"),null,"a nameless item is refused");
   eq(unpackOrder(packOrder({rep:{mobile:"1",first:"A",last:""},items:[{name:"x",qty:3,bonus:0}],
     due:"",note:""},"PH-ACDEFG"),"PH-ACDEFG").items,[{name:"x",qty:3,bonus:0}],"a bare minimum order works");
+
+  const recs = [
+    {id:"h1", created:"2026-11-01T09:00:00.000Z", pharmacy:{code:"PH-OTHER1",name:"Zahra"},
+     rep:hand.rep, items:[hand.items[0]], due:"", note:""},
+    {id:"h2", created:"2026-11-02T09:00:00.000Z", pharmacy:{code:"PH-ACDEFG",name:"Al Noor"},
+     rep:hand.rep, items:hand.items, due:hand.due, note:hand.note}
+  ];
+  eq(handedOrder(recs[1]),hand,"a kept hand-off rebuilds the order it came from");
+  eq(packOrder(handedOrder(recs[1]),"PH-ACDEFG"),packed,"showing that code again produces the same code");
+  eq(byNewest(recs).map(h=>h.id),["h2","h1"],"the newest hand-off is listed first");
+  eq(recs.map(h=>h.id),["h1","h2"],"sorting copies, it does not reorder what is stored");
   return t;
 }
 /*endpure*/
@@ -518,6 +534,10 @@ const AR = {
  "Too much for one code — hand it over in two shorter orders.":"أكبر من أن يسعه رمز واحد — سلّمه على دفعتين أقصر.",
  "For {name} — you will show them a code at the end.":"لـ {name} — ستظهر لهم رمزاً في النهاية.",
  "1 item":"صنف واحد",
+ "Orders you have handed over":"الطلبات التي سلّمتها",
+ "Nothing yet. Scan a counter sign to hand over your first order.":"لا شيء بعد. امسح لوحة كاونتر لتسليم أول طلب.",
+ "Show the code again":"أظهر الرمز مرة أخرى",
+ "due":"التسليم",
  "Make the code":"أنشئ الرمز",
  "That order was filled in for a different pharmacy.":"هذا الطلب مُعبّأ لصيدلية أخرى.",
  "Order taken from {name}.":"تم استلام طلب من {name}.",
@@ -550,9 +570,10 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const LS = "pharmOrders.v1";
 
-let S = {pharmacy:null, reps:{}, orders:{}};   // orders keyed by id
+let S = {pharmacy:null, reps:{}, orders:{}, handed:{}};   // orders keyed by id; handed = given to pharmacies
 let db = null, view = "waiting", screen = "list", draftItems = [{}], flashTimer = 0;
 let handoff = null;        // {code,name} while this phone is filling an order FOR another pharmacy
+let repMode = false;       // this phone is acting as a rep; it must never be sent to pharmacy setup
 
 function load(){ try{ Object.assign(S, JSON.parse(localStorage.getItem(LS)) || {}) }catch(e){} }
 function save(){ try{ localStorage.setItem(LS, JSON.stringify(S)) }catch(e){} }
@@ -649,7 +670,12 @@ function show(name){
 }
 function render(){
   if(location.hash === "#selfcheck") return renderCheck();
-  if(handoff && !S.pharmacy) return;        // a rep's phone is not a pharmacy; never push it to setup
+  // A rep's phone is not a pharmacy; never push it to setup. Re-render its own screen on a
+  // language flip, but leave a half-filled form or a code on show alone.
+  if(repMode && !S.pharmacy){
+    if(screen === "away") repHome(handoff?.code || null, handoff?.name || "");
+    return;
+  }
   const waiting = orders("waiting");
   $("phname").textContent = S.pharmacy?.name || T("Pharmacy Order Log");
   $("phsub").textContent = S.pharmacy ? T("{n} waiting").replace("{n}", waiting.length) : "";
@@ -864,7 +890,7 @@ $("gateScan").onclick = async () => {
   if(!scanned) return;
   const handed = unpackOrder(scanned, S.pharmacy.code);   // a rep's finished order?
   if(handed) return takeHandoff(handed);
-  if(codeFromScan(scanned) === S.pharmacy.code){ handoff = null; return openForm() }
+  if(codeFromScan(scanned) === S.pharmacy.code){ repMode = false; handoff = null; return openForm() }
   flash(unpackOrder(scanned, null)
     ? T("That order was filled in for a different pharmacy.")
     : T("That code is not this pharmacy's. Scan the code at the counter."), true);
@@ -898,7 +924,7 @@ function fromLink(){
   if(location.hash.indexOf("#p=") !== 0) return false;
   const code = codeFromScan(location.hash), name = linkField(location.hash,"n") || "";
   history.replaceState(null, "", location.pathname + location.search);   // survive a reload
-  if(S.pharmacy && S.pharmacy.code === code){ handoff = null; openForm() }
+  if(S.pharmacy && S.pharmacy.code === code){ repMode = false; handoff = null; openForm() }
   else repHome(code, name);
   return true;
 }
@@ -938,22 +964,62 @@ if(window.qrcode?.stringToBytesFuncs?.["UTF-8"])
 
 // A sign link opened on a phone that is not that pharmacy's — so, a rep's own phone.
 // They fill the order in here and hand it over as a QR; nothing is sent anywhere.
+function handedHTML(list){
+  return list.map(h => '<article class="card">'
+    + '<div class="rowtop"><div><div class="rep">' + esc(h.pharmacy.name || h.pharmacy.code) + '</div>'
+    + '<div class="mob">' + esc(h.pharmacy.code) + '</div></div>'
+    + '<span class="chip"><span class="when">' + esc(String(h.created).slice(0,10)) + '</span></span></div>'
+    + '<ul class="items">' + h.items.map(i => '<li><span class="nm">' + esc(i.name) + '</span>'
+      + '<span class="q">' + fmtQty(i) + '</span></li>').join("") + '</ul>'
+    + '<p class="note">' + T("{n} units in total").replace("{n}", units(h.items))
+      + (h.due ? ' · ' + T("due") + ' <span class="when">' + esc(h.due) + '</span>' : '')
+      + (h.note ? ' · ' + esc(h.note) : '') + '</p>'
+    + '<div class="acts"><button class="btn" data-again="' + h.id + '">'
+    + T("Show the code again") + '</button>'
+    + '<button class="btn danger" data-hdel="' + h.id + '">' + T("Delete") + '</button>'
+    + '</div></article>').join("");
+}
+
 function repHome(code, name){
-  handoff = {code, name};
-  $("away").innerHTML = '<h2>' + esc(name || T("Another pharmacy")) + '</h2>'
-    + '<div class="scan"><p>'
-    + T("Fill your order in here, then show the code to the pharmacy. It goes straight from your phone to theirs — nothing is uploaded.")
-    + '</p><p><button class="btn pri" id="awayGo">' + T("Fill in the order") + '</button></p>'
-    + '<p class="code">' + esc(code) + '</p>'
-    + (S.pharmacy ? '<p><button class="btn" id="awayBack">' + T("Open my own order log") + '</button></p>' : '')
-    + '</div>';
-  $("awayGo").onclick = () => openForm();
-  if(S.pharmacy) $("awayBack").onclick = () => { handoff = null; screen = "list"; render() };
+  repMode = true;
+  handoff = code ? {code, name} : null;
+  const mine = byNewest(Object.values(S.handed));
+  $("away").innerHTML = (code
+      ? '<h2>' + esc(name || T("Another pharmacy")) + '</h2>'
+        + '<div class="scan"><p>'
+        + T("Fill your order in here, then show the code to the pharmacy. It goes straight from your phone to theirs — nothing is uploaded.")
+        + '</p><p><button class="btn pri" id="awayGo">' + T("Fill in the order") + '</button></p>'
+        + '<p class="code">' + esc(code) + '</p></div>'
+        + (mine.length ? '<h2 style="margin-top:20px">' + T("Orders you have handed over") + '</h2>' : '')
+      : '<h2>' + T("Orders you have handed over") + '</h2>')
+    + (mine.length ? handedHTML(mine)
+        : (code ? '' : '<div class="empty">'
+            + T("Nothing yet. Scan a counter sign to hand over your first order.") + '</div>'))
+    + (S.pharmacy ? '<div class="acts"><button class="btn" id="awayBack">'
+        + T("Open my own order log") + '</button></div>' : '');
+  if(code) $("awayGo").onclick = () => openForm();
+  if(S.pharmacy) $("awayBack").onclick = () => {
+    repMode = false; handoff = null; screen = "list"; render();
+  };
   show("away");
 }
 
+$("away").addEventListener("click", e => {
+  const b = e.target.closest("button"); if(!b) return;
+  const d = b.dataset;
+  if(d.again){
+    const h = S.handed[d.again];
+    if(h){ handoff = {code:h.pharmacy.code, name:h.pharmacy.name}; showHandoff(handedOrder(h), h.id) }
+  }
+  else if(d.hdel){
+    if(b.textContent !== T("Delete?")){ b.textContent = T("Delete?"); return }
+    delete S.handed[d.hdel]; save();
+    repHome(handoff?.code || null, handoff?.name || "");
+  }
+});
+
 // The rep's finished order, as something the pharmacy photographs off this screen.
-function showHandoff(order){
+function showHandoff(order, keptId){
   const data = packOrder(order, handoff.code);
   let q;
   try{ q = qrcode(0, "M"); q.addData(data); q.make() }
@@ -962,6 +1028,12 @@ function showHandoff(order){
   // screen needs roughly 4 CSS px per module, and we have ~320. Past this it is a brick.
   if(!q || q.getModuleCount() > HANDOFF_MAX_MODULES)
     return flash(T("Too much for one code — hand it over in two shorter orders."), true);
+  if(!keptId){                  // a fresh hand-off: keep it on this phone. ponytail: local only,
+    const id = "h"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);   // it is the rep's own record
+    S.handed[id] = {id, created:new Date().toISOString(),
+      pharmacy:{code:handoff.code, name:handoff.name||""}, ...handedOrder(order)};
+    save();
+  }
   $("qr").innerHTML = '<h2>' + T("Show this to the pharmacy") + '</h2>'
     + '<div class="sign big"><h3>' + esc(handoff.name || T("Another pharmacy")) + '</h3>'
     + '<p class="ask">' + esc(order.rep.first + " " + order.rep.last).trim() + ' · '
@@ -1070,7 +1142,10 @@ try{ want = localStorage.getItem("pharmLang")
 load();
 // every pharmacy has a code now, including one set up before the app generated them
 if(S.pharmacy && !S.pharmacy.code){ S.pharmacy.code = newCode(); save() }
-setLang(want); fromLink(); connect();
+setLang(want);
+// a rep opening the app cold still gets their own history, not a pharmacy setup form
+if(!fromLink() && !S.pharmacy && Object.keys(S.handed).length) repHome(null, "");
+connect();
 // a sign link opened while the app is already running changes the hash without reloading
 addEventListener("hashchange", fromLink);
 if("serviceWorker" in navigator && location.protocol.indexOf("http") === 0)

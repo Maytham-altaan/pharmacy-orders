@@ -16,6 +16,12 @@ shows a QR holding the whole order. The pharmacy photographs it from their own a
 uploaded, works with no signal, and the rep's phone remembers them so the next
 pharmacy autofills.
 
+The rep's phone also **keeps what it handed over** (`S.handed`, local only — it is the
+rep's own record, not the pharmacy's). Opening the app cold shows that history instead of
+a pharmacy setup form, newest first, with the pharmacy on each card, and each one can be
+shown again as the same code if a scan failed. `repMode` is what keeps a rep's phone out
+of the pharmacy screens, including on a language switch.
+
 Opened on the pharmacy's own phone the sign goes straight to a blank order instead,
 which is what the scan was for.
 

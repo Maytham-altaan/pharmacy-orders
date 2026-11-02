@@ -127,6 +127,9 @@ h2{font-size:15px;margin:0 0 12px}
 .sign h3{margin:0;font-size:17px;color:#111}
 .sign .ask{margin:4px 0 16px;font-size:13px;color:#555}
 .sign svg{display:block;margin:0 auto;width:min(64vw,250px);height:auto}
+/* the hand-off is photographed off a screen, not read off paper — give it every pixel */
+.sign.big{padding:18px 10px}
+.sign.big svg{width:100%;max-width:420px}
 .sign .pc{margin:14px 0 0;font-family:var(--mono);font-size:16px;letter-spacing:.08em;color:#111}
 .sign .pc,.sign .ask{direction:ltr;unicode-bidi:isolate}
 @media print{
@@ -174,10 +177,10 @@ h2{font-size:15px;margin:0 0 12px}
 
   <!-- rep scan gate -->
   <section id="gate" hidden>
-    <h2 data-t="Scan the pharmacy QR">Scan the pharmacy QR</h2>
+    <h2 data-t="Scan to start">Scan to start</h2>
     <div class="scan">
       <button class="btn pri" id="gateScan" data-t="Open camera">Open camera</button>
-      <p data-t="Point at the pharmacy's QR code and take the photo.">Point at the pharmacy's QR code and take the photo.</p>
+      <p data-t="Photograph the code the rep is showing you to take their order straight in, or the counter sign to type it yourself.">Photograph the code the rep is showing you to take their order straight in, or the counter sign to type it yourself.</p>
       <p><button class="btn" id="gateType" data-t="Type the code">Type the code</button>
       <button class="btn" id="gateSkip" data-t="I am the pharmacy — just open it">I am the pharmacy — just open it</button></p>
     </div>
@@ -189,6 +192,7 @@ h2{font-size:15px;margin:0 0 12px}
   <!-- order form -->
   <section id="form" hidden>
     <h2 data-t="New order">New order</h2>
+    <p class="hint" id="formfor"></p>
     <div class="field"><label for="mob" data-t="Mobile number">Mobile number</label>
       <input id="mob" type="tel" inputmode="tel" autocomplete="off" placeholder="07xx xxx xxxx" dir="ltr"></div>
     <p class="hint" id="rephit"></p>
@@ -302,6 +306,28 @@ function linkField(s, key){
 function codeFromScan(s){               // a sign link, or a code typed or scanned on its own
   return linkField(s,"p") ?? String(s==null?"":s).trim();
 }
+// An order handed from the rep's phone to the pharmacy's, as a QR. Keys are one letter
+// because every byte widens the code the pharmacy has to photograph off a screen.
+function packOrder(o, code){
+  const p = {v:1, p:code, m:o.rep.mobile, f:o.rep.first,
+    i:o.items.map(i=>[i.name, i.qty, i.bonus])};
+  if(o.rep.last) p.l = o.rep.last;        // empty fields are bytes, and bytes are modules
+  if(o.due) p.d = o.due;
+  if(o.note) p.n = o.note;
+  return JSON.stringify(p);
+}
+function unpackOrder(s, code){
+  let o; try{ o = JSON.parse(s) }catch(e){ return null }
+  if(!o || o.v !== 1 || !o.m || !Array.isArray(o.i) || !o.i.length) return null;
+  if(code && o.p !== code) return null;          // somebody else's pharmacy
+  const items = [];
+  for(const it of o.i){
+    if(!Array.isArray(it) || !it[0] || !(+it[1] >= 1)) return null;
+    items.push({name:String(it[0]), qty:+it[1], bonus:+it[2] || 0});
+  }
+  return {rep:{mobile:String(o.m), first:String(o.f||""), last:String(o.l||"")},
+    items, due:String(o.d||""), note:String(o.n||"")};
+}
 function qrSvg(count, isDark){          // 4 modules of quiet zone, or phones will not see the code
   const q = 4, side = count + q*2, out = [];
   for(let r=0;r<count;r++) for(let c=0;c<count;c++)
@@ -383,6 +409,23 @@ function selfcheck(){
   eq(codeFromScan("https://other.example/#p=PH-ACDEFG"),"PH-ACDEFG","a link from any host reads the same");
   eq(codeFromScan("100%"),"100%","a stray percent does not throw");
   eq(linkField("PH-ACDEFG","n"),null,"a bare code carries no name");
+
+  const hand = {rep:{mobile:"07701234567",first:"Ali",last:"Hassan"},
+    items:[{name:"Augmentin 625mg",qty:10,bonus:2},{name:"Panadol",qty:20,bonus:0}],
+    due:"2026-11-09", note:'he said "leave it"'};
+  const packed = packOrder(hand,"PH-ACDEFG");
+  eq(unpackOrder(packed,"PH-ACDEFG"),hand,"an order survives the hand-off to the pharmacy");
+  eq(unpackOrder(packed,"PH-OTHER1"),null,"another pharmacy's phone refuses it");
+  eq(unpackOrder(packed,null).items[0].bonus,2,"the bonus comes across");
+  eq(packed.length<400,true,"a two-item order stays small enough to photograph");
+  eq(unpackOrder("not json","PH-ACDEFG"),null,"a plain scanned code is not an order");
+  eq(unpackOrder('{"v":9,"p":"PH-ACDEFG","m":"1","i":[["x",1,0]]}',"PH-ACDEFG"),null,"a future version is refused");
+  eq(unpackOrder('{"v":1,"p":"PH-ACDEFG","m":"1","i":[]}',"PH-ACDEFG"),null,"an order with no items is refused");
+  eq(unpackOrder('{"v":1,"p":"PH-ACDEFG","i":[["x",1,0]]}',"PH-ACDEFG"),null,"an order with no mobile is refused");
+  eq(unpackOrder('{"v":1,"p":"PH-ACDEFG","m":"1","i":[["x",0,0]]}',"PH-ACDEFG"),null,"a zero quantity is refused");
+  eq(unpackOrder('{"v":1,"p":"PH-ACDEFG","m":"1","i":[["",5,0]]}',"PH-ACDEFG"),null,"a nameless item is refused");
+  eq(unpackOrder(packOrder({rep:{mobile:"1",first:"A",last:""},items:[{name:"x",qty:3,bonus:0}],
+    due:"",note:""},"PH-ACDEFG"),"PH-ACDEFG").items,[{name:"x",qty:3,bonus:0}],"a bare minimum order works");
   return t;
 }
 /*endpure*/
@@ -467,6 +510,19 @@ const AR = {
  "Use a QR code I already have":"استخدم رمزاً لديّ بالفعل",
  "I am the pharmacy — just open it":"أنا الصيدلية — افتحها مباشرة",
  "Another pharmacy":"صيدلية أخرى",
+ "Fill your order in here, then show the code to the pharmacy. It goes straight from your phone to theirs — nothing is uploaded.":"املأ طلبك هنا ثم أظهر الرمز للصيدلية. ينتقل مباشرة من هاتفك إلى هاتفهم — لا يُرفع شيء إلى الإنترنت.",
+ "Fill in the order":"املأ الطلب",
+ "Show this to the pharmacy":"أظهر هذا للصيدلية",
+ "{n} items":"{n} أصناف",
+ "They scan this from their own app — + New order, then Open camera. Keep the screen bright.":"يمسحونه من تطبيقهم — طلب جديد ثم افتح الكاميرا. أبقِ سطوع الشاشة عالياً.",
+ "Too much for one code — hand it over in two shorter orders.":"أكبر من أن يسعه رمز واحد — سلّمه على دفعتين أقصر.",
+ "For {name} — you will show them a code at the end.":"لـ {name} — ستظهر لهم رمزاً في النهاية.",
+ "1 item":"صنف واحد",
+ "Make the code":"أنشئ الرمز",
+ "That order was filled in for a different pharmacy.":"هذا الطلب مُعبّأ لصيدلية أخرى.",
+ "Order taken from {name}.":"تم استلام طلب من {name}.",
+ "Scan to start":"امسح للبدء",
+ "Photograph the code the rep is showing you to take their order straight in, or the counter sign to type it yourself.":"صوّر الرمز الذي يعرضه المندوب ليدخل طلبه مباشرة، أو صوّر لوحة الكاونتر لتكتبه بنفسك.",
  "You opened the counter code for this pharmacy. Their order log sits on their own phone, so an order typed here would not reach them — hand them the phone, or ask them to open their app.":"فتحت رمز الكاونتر الخاص بهذه الصيدلية. سجل طلباتها موجود على هاتفهم، لذا لن يصلهم أي طلب يُكتب هنا — ناولهم الهاتف أو اطلب منهم فتح التطبيق.",
  "Open my own order log":"افتح سجل طلباتي",
  "Save the sign":"احفظ اللوحة",
@@ -496,6 +552,7 @@ const LS = "pharmOrders.v1";
 
 let S = {pharmacy:null, reps:{}, orders:{}};   // orders keyed by id
 let db = null, view = "waiting", screen = "list", draftItems = [{}], flashTimer = 0;
+let handoff = null;        // {code,name} while this phone is filling an order FOR another pharmacy
 
 function load(){ try{ Object.assign(S, JSON.parse(localStorage.getItem(LS)) || {}) }catch(e){} }
 function save(){ try{ localStorage.setItem(LS, JSON.stringify(S)) }catch(e){} }
@@ -592,6 +649,7 @@ function show(name){
 }
 function render(){
   if(location.hash === "#selfcheck") return renderCheck();
+  if(handoff && !S.pharmacy) return;        // a rep's phone is not a pharmacy; never push it to setup
   const waiting = orders("waiting");
   $("phname").textContent = S.pharmacy?.name || T("Pharmacy Order Log");
   $("phsub").textContent = S.pharmacy ? T("{n} waiting").replace("{n}", waiting.length) : "";
@@ -726,12 +784,13 @@ function renderCheck(){
   const rows = selfcheck(), bad = rows.filter(r=>!r[0]).length;
   $("check").innerHTML = '<h2>'+(bad?bad+" failed":"All "+rows.length+" checks pass")+'</h2>'
     + (MISS.size ? '<p class="note">Untranslated: '+esc([...MISS].join(" | "))+'</p>' : '')
-    + '<p class="note" id="rt">… encoding a QR and reading it back</p>'
+    + '<p class="note" id="rt">… encoding two QR codes and reading them back</p>'
     + rows.map(r=>'<p class="note">'+(r[0]?"ok":"FAIL")+' — '+esc(r[1])
       + (r[0]?"":' got <span class="code">'+esc(JSON.stringify(r[2]))+'</span>')+'</p>').join("");
-  qrRoundTrip().then(r => { $("rt").innerHTML = (r[0]?"ok":"FAIL")+' — '+esc(r[1])
-      + (r[0]?"":' got <span class="code">'+esc(String(r[2]))+'</span>') })
-    .catch(e => { $("rt").textContent = "FAIL — the round trip threw: " + e });
+  qrRoundTrip().then(rs => { $("rt").outerHTML = rs.map(r =>
+      '<p class="note">'+(r[0]?"ok":"FAIL")+' — '+esc(r[1])
+      + (r[0]?"":' got <span class="code">'+esc(JSON.stringify(r[2]))+'</span>')+'</p>').join("") })
+    .catch(e => { $("rt").textContent = "FAIL — a round trip threw: " + e });
 }
 
 /* ---------- form ---------- */
@@ -747,6 +806,10 @@ function openForm(){
   for(const id of ["mob","fn","ln","note"]) $(id).value = "";
   $("due").value = todayISO();
   $("rephit").textContent = "";
+  $("formfor").textContent = handoff
+    ? T("For {name} — you will show them a code at the end.").replace("{name}", handoff.name || handoff.code)
+    : "";
+  $("save").textContent = T(handoff ? "Make the code" : "Save order");
   renderItems(); show("form");
 }
 function lookupRep(){
@@ -769,8 +832,10 @@ async function saveOrder(){
     items.push({name:it.name.trim(), qty:q.qty, bonus:q.bonus});
   }
   if(!items.length) return flash(T("Add at least one item."), true);
-  S.reps[mobile] = {mobile, first, last};
+  S.reps[mobile] = {mobile, first, last};     // on a rep's own phone this is them, so next time autofills
   putSettings();
+  if(handoff) return showHandoff({rep:{mobile, first, last}, items,
+    due:$("due").value || "", note:$("note").value.trim()});
   await putOrder({id:"o"+Date.now().toString(36)+Math.random().toString(36).slice(2,6),
     created:new Date().toISOString(), rep:{mobile,first,last}, items,
     due:$("due").value || "", note:$("note").value.trim(), status:"pending"});
@@ -791,15 +856,30 @@ $("addItem").onclick = () => { draftItems.push({}); renderItems();
   $("items").querySelector(".itemrow:last-child .nm").focus() };
 $("mob").addEventListener("change", lookupRep);
 $("save").onclick = saveOrder;
-$("cancel").onclick = () => { show("list"); renderList() };
+$("cancel").onclick = () => handoff ? repHome(handoff.code, handoff.name) : (show("list"), renderList());
 
 $("newOrder").onclick = () => S.pharmacy.code ? show("gate") : openForm();
 $("gateScan").onclick = async () => {
   const scanned = await scan();
   if(!scanned) return;
-  if(codeFromScan(scanned) === S.pharmacy.code) openForm();
-  else flash(T("That code is not this pharmacy's. Scan the code at the counter."), true);
+  const handed = unpackOrder(scanned, S.pharmacy.code);   // a rep's finished order?
+  if(handed) return takeHandoff(handed);
+  if(codeFromScan(scanned) === S.pharmacy.code){ handoff = null; return openForm() }
+  flash(unpackOrder(scanned, null)
+    ? T("That order was filled in for a different pharmacy.")
+    : T("That code is not this pharmacy's. Scan the code at the counter."), true);
 };
+
+// An order the rep filled in on their own phone, read off their screen.
+async function takeHandoff(o){
+  S.reps[o.rep.mobile] = o.rep;
+  putSettings();
+  await putOrder({id:"o"+Date.now().toString(36)+Math.random().toString(36).slice(2,6),
+    created:new Date().toISOString(), rep:o.rep, items:o.items,
+    due:o.due, note:o.note, status:"pending"});
+  view = "waiting"; screen = "list"; show("list"); renderList();
+  flash(T("Order taken from {name}.").replace("{name}", o.rep.first || o.rep.mobile));
+}
 $("gateType").onclick = () => {
   const el = document.createElement("div");
   el.innerHTML = '<div class="field"><label for="tc">'+T("Pharmacy code")+'</label><input id="tc"></div>'
@@ -818,8 +898,8 @@ function fromLink(){
   if(location.hash.indexOf("#p=") !== 0) return false;
   const code = codeFromScan(location.hash), name = linkField(location.hash,"n") || "";
   history.replaceState(null, "", location.pathname + location.search);   // survive a reload
-  if(S.pharmacy && S.pharmacy.code === code) openForm();
-  else elsewhere(code, name);
+  if(S.pharmacy && S.pharmacy.code === code){ handoff = null; openForm() }
+  else repHome(code, name);
   return true;
 }
 
@@ -849,32 +929,94 @@ function nameIt(code, made){
 }
 
 const appBase = () => location.origin + location.pathname;
+const HANDOFF_MAX_MODULES = 77;     // see showHandoff: an optical limit, not a capacity one
 
-// A sign link opened somewhere that is not this pharmacy. Today the honest answer is that
-// the log lives on their phone; this is where a rep-side submission would plug in.
-function elsewhere(code, name){
+// The encoder's default byte mode truncates each char code to 8 bits, so "علي" ships as "9DJ".
+// Its UTF-8 function is correct; nothing in this app may encode a QR before this line runs.
+if(window.qrcode?.stringToBytesFuncs?.["UTF-8"])
+  qrcode.stringToBytes = qrcode.stringToBytesFuncs["UTF-8"];
+
+// A sign link opened on a phone that is not that pharmacy's — so, a rep's own phone.
+// They fill the order in here and hand it over as a QR; nothing is sent anywhere.
+function repHome(code, name){
+  handoff = {code, name};
   $("away").innerHTML = '<h2>' + esc(name || T("Another pharmacy")) + '</h2>'
     + '<div class="scan"><p>'
-    + T("You opened the counter code for this pharmacy. Their order log sits on their own phone, so an order typed here would not reach them — hand them the phone, or ask them to open their app.")
-    + '</p><p class="code">' + esc(code) + '</p>'
-    + '<p><button class="btn" id="awayBack">' + T("Open my own order log") + '</button></p></div>';
-  $("awayBack").onclick = () => { screen = "list"; render() };
+    + T("Fill your order in here, then show the code to the pharmacy. It goes straight from your phone to theirs — nothing is uploaded.")
+    + '</p><p><button class="btn pri" id="awayGo">' + T("Fill in the order") + '</button></p>'
+    + '<p class="code">' + esc(code) + '</p>'
+    + (S.pharmacy ? '<p><button class="btn" id="awayBack">' + T("Open my own order log") + '</button></p>' : '')
+    + '</div>';
+  $("awayGo").onclick = () => openForm();
+  if(S.pharmacy) $("awayBack").onclick = () => { handoff = null; screen = "list"; render() };
   show("away");
 }
 
-// encode -> the SVG we actually print -> raster -> jsQR. Proves a rep's phone can read the sign.
-async function qrRoundTrip(){
-  const code = newCode();
-  const q = qrcode(0, "M"); q.addData(code); q.make();
-  const svg = qrSvg(q.getModuleCount(), q.isDark);
+// The rep's finished order, as something the pharmacy photographs off this screen.
+function showHandoff(order){
+  const data = packOrder(order, handoff.code);
+  let q;
+  try{ q = qrcode(0, "M"); q.addData(data); q.make() }
+  catch(e){ q = null }
+  // The encoder will happily take 40 items, but a phone camera reading another phone's
+  // screen needs roughly 4 CSS px per module, and we have ~320. Past this it is a brick.
+  if(!q || q.getModuleCount() > HANDOFF_MAX_MODULES)
+    return flash(T("Too much for one code — hand it over in two shorter orders."), true);
+  $("qr").innerHTML = '<h2>' + T("Show this to the pharmacy") + '</h2>'
+    + '<div class="sign big"><h3>' + esc(handoff.name || T("Another pharmacy")) + '</h3>'
+    + '<p class="ask">' + esc(order.rep.first + " " + order.rep.last).trim() + ' · '
+    + (order.items.length === 1 ? T("1 item")
+        : T("{n} items").replace("{n}", order.items.length)) + '</p>'
+    + qrSvg(q.getModuleCount(), q.isDark) + '</div>'
+    + '<p class="note">' + T("They scan this from their own app — + New order, then Open camera. Keep the screen bright.") + '</p>'
+    + '<div class="acts"><button class="btn" id="handDone">' + T("Done") + '</button></div>';
+  $("handDone").onclick = () => repHome(handoff.code, handoff.name);
+  show("qr");
+}
+
+// encode -> the SVG we really draw -> raster -> jsQR. The only checks that prove a camera
+// can read what we put in front of it; node cannot run them.
+async function rasterDecode(q){
   const px = (q.getModuleCount() + 8) * 8;
   const img = new Image();
   await new Promise((ok,no)=>{ img.onload = ok; img.onerror = no;
-    img.src = "data:image/svg+xml;base64," + btoa(svg) });
+    img.src = "data:image/svg+xml;base64," + btoa(qrSvg(q.getModuleCount(), q.isDark)) });
   const cv = document.createElement("canvas"); cv.width = cv.height = px;
   cv.getContext("2d").drawImage(img, 0, 0, px, px);
-  const got = jsQR(cv.getContext("2d").getImageData(0,0,px,px).data, px, px);
-  return [got?.data === code, "the printed sign decodes back to " + code, got?.data ?? null];
+  return jsQR(cv.getContext("2d").getImageData(0,0,px,px).data, px, px)?.data ?? null;
+}
+async function qrRoundTrip(){
+  const rows = [], code = newCode();
+  const url = signURL(appBase(), code, "Al Noor Pharmacy");
+  let q = qrcode(0,"M"); q.addData(url); q.make();
+  const back = await rasterDecode(q);
+  rows.push([back === url, "the counter sign decodes back to its own link", back]);
+
+  const order = {rep:{mobile:"07701234567", first:"Ali", last:"Hassan"},
+    items:[{name:"Augmentin 625mg",qty:10,bonus:2},{name:"Panadol Extra 24s",qty:20,bonus:0},
+           {name:"Vitamin D3 50000",qty:6,bonus:1}],
+    due:"2026-11-09", note:"leave it with the pharmacist"};
+  q = qrcode(0,"M"); q.addData(packOrder(order, code)); q.make();
+  const got = unpackOrder(await rasterDecode(q), code);
+  rows.push([JSON.stringify(got) === JSON.stringify(order),
+    "a three-item order survives being photographed off the rep's screen ("
+      + q.getModuleCount() + " modules)", got]);
+
+  const ar = {rep:{mobile:"07701234567", first:"علي", last:"حسن"},   // key order must match unpackOrder
+    items:[{name:"أوغمنتين ٦٢٥ ملغم", qty:10, bonus:2}, {name:"بنادول إكسترا", qty:20, bonus:0}],
+    due:"2026-11-09", note:"يُترك عند الصيدلاني"};
+  q = qrcode(0,"M"); q.addData(packOrder(ar, code)); q.make();
+  const gotAr = unpackOrder(await rasterDecode(q), code);
+  rows.push([JSON.stringify(gotAr) === JSON.stringify(ar),
+    "an Arabic order comes back as Arabic, not mangled to Latin", gotAr]);
+
+  const big = {rep:{mobile:"07701234567", first:"Ali", last:"Hassan"}, due:"2026-11-09", note:"",
+    items:Array.from({length:9},(_,i)=>({name:"Medicine name number "+(i+1), qty:10, bonus:2}))};
+  q = qrcode(0,"M"); q.addData(packOrder(big, code)); q.make();
+  rows.push([q.getModuleCount() <= HANDOFF_MAX_MODULES,
+    "a nine-item order still fits under the readable limit of " + HANDOFF_MAX_MODULES
+      + " modules (" + q.getModuleCount() + ")", q.getModuleCount()]);
+  return rows;
 }
 
 function showQR(){

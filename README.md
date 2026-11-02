@@ -7,9 +7,25 @@ Every pharmacy gets **its own QR code automatically** at setup — type the name
 the counter sign. Re-print it any time from Summary → *Print the counter sign*.
 
 The sign holds a link (`…/#p=CODE&n=NAME`), not a bare code, so scanning it opens the
-app rather than showing raw text. Opened on the pharmacy's own phone it goes straight
-to a new order, which is what the scan was for. Opened anywhere else it says plainly
-that the log lives on the pharmacy's phone — orders do **not** travel between devices.
+app rather than showing raw text.
+
+**The rep fills the order in on their own phone.** They scan the counter sign, which
+opens the app for that pharmacy; they type the items and bonuses; their screen then
+shows a QR holding the whole order. The pharmacy photographs it from their own app
+(*+ New order → Open camera*) and it lands in their log. Phone to phone, nothing
+uploaded, works with no signal, and the rep's phone remembers them so the next
+pharmacy autofills.
+
+Opened on the pharmacy's own phone the sign goes straight to a blank order instead,
+which is what the scan was for.
+
+Two limits worth knowing. The hand-off QR is capped at **77 modules** (`HANDOFF_MAX_MODULES`)
+— not because more will not encode, but because a camera reading another phone's screen
+needs roughly 4 CSS px per module and there are only ~320 to go round. That is about nine
+items in Latin script, fewer in Arabic, which takes two bytes per letter; past it the app
+refuses and asks for two shorter orders. And the encoder's default byte mode truncates
+char codes to 8 bits, which turns `علي` into `9DJ` — `qrcode.stringToBytes` is switched to
+the library's UTF-8 function at startup, and a round-trip check guards it.
 
 No build step, no server, no accounts. Every pharmacy's data stays on their own phone.
 
@@ -30,8 +46,10 @@ Two CDN scripts, both pinned: `jsqr` reads a QR, `qrcode-generator` writes one.
 The service worker caches both, so the app still scans and prints offline.
 
 The app's own checks live in `index.html`: open it at `#selfcheck`, or run them headless.
-`#selfcheck` also runs one check node cannot: it encodes a code, rasterises the SVG the
-sign actually prints, and decodes it back with `jsQR` — proof a rep's phone will read it.
+`#selfcheck` also runs four checks node cannot: it encodes the sign and a rep's order,
+rasterises the SVG each really draws, decodes them back with `jsQR`, and compares — in
+Latin and in Arabic. Those are the only checks that prove a camera can read what the app
+puts in front of it.
 
 ```
 node -e 'const s=require("fs").readFileSync("index.html","utf8");eval(s.split("/*pure*/")[1].split("/*endpure*/")[0]);const r=selfcheck();console.log(r.filter(x=>!x[0]).length?"FAILED":"all "+r.length+" pass")'

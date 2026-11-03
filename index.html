@@ -91,9 +91,12 @@ input,textarea{width:100%;background:var(--surface);color:var(--fg);border:1px s
 input:focus-visible,textarea:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .field{margin-bottom:12px}
 .two{display:flex;gap:8px}.two>*{flex:1;min-width:0}
-.itemrow{display:flex;gap:8px;margin-bottom:8px}
-.itemrow .nm{flex:2;min-width:0}.itemrow .q{flex:1;min-width:0;font-family:var(--mono)}
-.itemrow .x{flex:0 0 auto}
+.itemrow{border:1px solid var(--line);border-radius:10px;padding:10px 10px 11px;margin-bottom:8px;background:var(--surface)}
+.itemrow .nm{margin-bottom:8px}
+.itemrow .qs{display:flex;gap:8px;align-items:flex-end}
+label.mini{flex:1;min-width:0;margin:0;font-size:10.5px}
+label.mini input{margin-top:3px;font-family:var(--mono);text-align:center;direction:ltr}
+.itemrow .x{flex:0 0 auto;width:40px;height:40px;padding:0;font-size:17px;line-height:1}
 .hint{color:var(--fg-dim);font-size:12.5px;margin:-6px 0 12px}
 .tiles{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px}
 .tile{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
@@ -121,6 +124,29 @@ h2{font-size:15px;margin:0 0 12px}
 .lang{margin-inline-start:auto;border:1px solid var(--line);background:var(--surface);color:var(--fg-dim);
   border-radius:999px;padding:3px 11px;font-size:12px;font-weight:500;cursor:pointer}
 @media (prefers-reduced-motion:no-preference){.card{transition:border-color .15s}}
+
+/* nav: back / forward / main / dashboard. The app has no URLs, so this is its address bar. */
+.nav{display:flex;gap:6px;margin:12px 0 0}
+.nb{border:1px solid var(--line);background:var(--surface);color:var(--fg-dim);border-radius:9px;
+  padding:9px 10px;font:inherit;font-size:13px;font-weight:500;cursor:pointer;min-height:40px}
+.nb.grow{flex:1;min-width:0}
+.nb.arrow{flex:0 0 auto;width:40px;padding:0;font-size:18px;line-height:1}
+.nb[aria-current="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+.nb:disabled{opacity:.35;cursor:default}
+
+/* a rep's number is a tap into WhatsApp, with the reminder already written */
+a.wa{color:var(--accent);text-decoration:none;font-weight:500}
+a.wa::after{content:"\00a0\2197";font-size:10px;opacity:.75}
+a.btn{display:inline-block;text-decoration:none;text-align:center}
+
+/* the pharmacy's own barcode, at the top of its own dashboard */
+.qrpanel{display:flex;gap:13px;align-items:center}
+.qrpanel .sign.mini{flex:0 0 auto;padding:7px;border-radius:9px}
+.sign.mini svg{width:102px}
+.qrmeta{flex:1;min-width:0}
+.qrmeta h3{margin-bottom:3px}
+.qrmeta .code{margin:0;font-size:14.5px;letter-spacing:.06em}
+.qrmeta .note{margin:3px 0 9px}
 
 /* the counter sign stays black-on-white whatever the app theme — a dark QR does not scan */
 .sign{background:#fff;border:1px solid var(--line);border-radius:12px;padding:22px 16px;text-align:center}
@@ -150,6 +176,12 @@ h2{font-size:15px;margin:0 0 12px}
     <span class="sub" id="phsub"></span>
     <button class="lang" id="langBtn" type="button"></button>
   </header>
+  <nav class="nav" id="nav" hidden>
+    <button class="nb arrow" id="navBack" type="button" aria-label="Back"></button>
+    <button class="nb arrow" id="navFwd" type="button" aria-label="Forward"></button>
+    <button class="nb grow" id="navMain" type="button" data-t="Main">Main</button>
+    <button class="nb grow" id="navDash" type="button" data-t="Dashboard">Dashboard</button>
+  </nav>
   <div id="flash"></div>
 
   <!-- setup: no pharmacy QR stored yet -->
@@ -170,10 +202,12 @@ h2{font-size:15px;margin:0 0 12px}
       <button class="tab" role="tab" data-view="waiting" data-t="Waiting">Waiting</button>
       <button class="tab" role="tab" data-view="received" data-t="Received">Received</button>
       <button class="tab" role="tab" data-view="reps" data-t="Reps">Reps</button>
-      <button class="tab" role="tab" data-view="summary" data-t="Summary">Summary</button>
     </div>
     <div id="rows"></div>
   </section>
+
+  <!-- this pharmacy's own dashboard: its barcode, its totals, its reps -->
+  <section id="dash" hidden></section>
 
   <!-- rep scan gate -->
   <section id="gate" hidden>
@@ -200,11 +234,11 @@ h2{font-size:15px;margin:0 0 12px}
       <div class="field"><label for="fn" data-t="First name">First name</label><input id="fn" autocomplete="off"></div>
       <div class="field"><label for="ln" data-t="Last name">Last name</label><input id="ln" autocomplete="off"></div>
     </div>
-    <div class="field"><label data-t="Items — quantity + bonus">Items — quantity + bonus</label>
+    <div class="field"><label data-t="Items">Items</label>
       <div id="items"></div>
       <button class="btn" id="addItem" data-t="Add another item">Add another item</button>
     </div>
-    <p class="hint" data-th="Write the bonus the way you agreed it: <b>10+2</b> means 10 boxes plus 2 free.">Write the bonus the way you agreed it: <b>10+2</b> means 10 boxes plus 2 free.</p>
+    <p class="hint" data-th="<b>Quantity</b> is what the pharmacy pays for. <b>Bonus</b> is what comes free — leave it empty when there is none.">…</p>
     <div class="field"><label for="due" data-t="Delivery date">Delivery date</label><input id="due" type="date"></div>
     <div class="field"><label for="note" data-t="Note (optional)">Note (optional)</label><textarea id="note" rows="2"></textarea></div>
     <div class="acts"><button class="btn pri" id="save" data-t="Save order">Save order</button>
@@ -231,8 +265,56 @@ function parseQty(s){                         // "10+2" -> {qty:10,bonus:2}
   const m = String(s==null?"":s).match(/^\s*(\d{1,6})\s*(?:[+ ]\s*(\d{1,6}))?\s*$/);
   return m ? {qty:+m[1], bonus:m[2]?+m[2]:0} : null;
 }
+function parseCount(s){                       // the bonus box: a plain number, or empty
+  const t = String(s==null?"":s).trim();
+  return t === "" ? 0 : (/^\d{1,6}$/.test(t) ? +t : null);
+}
+// One row of the form: name, quantity, bonus. Returns the item, null for a blank row, or
+// {err} naming which box is wrong — so saveOrder has no parsing left to do.
+function itemFrom(row){
+  const name = String(row.name==null?"":row.name).trim();
+  const qs = String(row.qty==null?"":row.qty).trim();
+  const bs = String(row.bonus==null?"":row.bonus).trim();
+  if(!name && !qs && !bs) return null;
+  if(!name) return {err:"noname"};
+  const q = parseQty(qs);                     // still splits a "10+2" pasted into the quantity box
+  if(!q) return {err:"qty", v:qs};
+  const b = parseCount(bs);
+  if(b === null) return {err:"bonus", v:bs};
+  return {name, qty:q.qty, bonus: bs === "" ? q.bonus : b};
+}
 function fmtQty(it){ return it.bonus ? it.qty+" + "+it.bonus : String(it.qty) }
 function units(items){ return items.reduce((n,i)=>n+i.qty+i.bonus,0) }
+// Reps are typed in as 07xx xxx xxxx; WhatsApp wants 9647xx.... Some are saved with the
+// country code already on, so strip 00 and leave a number that already has it alone.
+// ponytail: Iraq by default — no mobile prefix here collides with 964, so this is safe.
+function waNumber(mobile, cc){
+  cc = cc || "964";
+  let d = String(mobile==null?"":mobile).replace(/\D/g,"");
+  if(d.indexOf("00") === 0) d = d.slice(2);
+  return d.indexOf(cc) === 0 ? d : cc + d.replace(/^0+/, "");
+}
+// The follow-up the pharmacy sends a rep. Always Arabic: the rep is the one reading it,
+// whichever language the pharmacist runs the app in.
+function waText(list, pharmacy){
+  const rep = (list[0] && list[0].rep) || {};
+  const who = ((rep.first||"")+" "+(rep.last||"")).trim();
+  const out = ["السلام عليكم"
+    + (who ? " "+who : "") + (pharmacy ? "، من "+pharmacy : "") + "."];
+  for(const o of list){
+    if(!o.items || !o.items.length) continue;
+    out.push("تذكير بالطلب المسجل بتاريخ " + String(o.created||"").slice(0,10) + ":");
+    for(const i of o.items)
+      out.push("• " + i.name + " — " + i.qty
+        + (i.bonus ? " + " + i.bonus + " بونص" : ""));
+    if(o.due) out.push("التسليم المتفق عليه: " + o.due + ".");
+  }
+  const bonus = list.some(o => (o.items||[]).some(i => i.bonus > 0));
+  out.push(bonus ? "نرجو تثبيت البونص عند التسليم. شكراً لك."
+                 : "نرجو تأكيد موعد التسليم. شكراً لك.");
+  return out.join("\n");
+}
+function waURL(mobile, text){ return "https://wa.me/"+waNumber(mobile)+"?text="+encodeURIComponent(text) }
 function days(a,b){ return Math.round((Date.parse(a+"T00:00:00Z")-Date.parse(b+"T00:00:00Z"))/864e5) }
 function dueState(due,today){
   if(!due) return "none";
@@ -330,6 +412,11 @@ function unpackOrder(s, code){
 }
 // What a rep keeps on their own phone about an order they handed over.
 function handedOrder(h){ return {rep:h.rep, items:h.items, due:h.due, note:h.note} }
+// One pharmacy never sees another's orders: an order carries the code it was taken under,
+// and this is the only door into the list, the dashboard and the export.
+function ownOrders(all, code){
+  return all.filter(o => !o.code || o.code === code);   // !o.code: saved before codes existed
+}
 function byNewest(list){
   return list.slice().sort((a,b)=>String(b.created).localeCompare(String(a.created)));
 }
@@ -442,6 +529,50 @@ function selfcheck(){
   eq(packOrder(handedOrder(recs[1]),"PH-ACDEFG"),packed,"showing that code again produces the same code");
   eq(byNewest(recs).map(h=>h.id),["h2","h1"],"the newest hand-off is listed first");
   eq(recs.map(h=>h.id),["h1","h2"],"sorting copies, it does not reorder what is stored");
+
+  const mixed = [{id:"a",code:"PH-ACDEFG"},{id:"b",code:"PH-OTHER1"},{id:"c"}];
+  eq(ownOrders(mixed,"PH-ACDEFG").map(o=>o.id),["a","c"],
+     "a dashboard shows its own pharmacy's orders and nothing from another's code");
+  eq(ownOrders(mixed,"PH-OTHER1").map(o=>o.id),["b","c"],"and the other way round");
+  eq(ownOrders(mixed,undefined).map(o=>o.id),["c"],
+     "with no code set, only orders from before codes existed are shown");
+  eq(ownOrders([],"PH-ACDEFG"),[],"an empty log stays empty");
+
+  eq(parseCount(""),0,"an empty bonus box means no bonus");
+  eq(parseCount(" 2 "),2,"a bonus is trimmed");
+  eq(parseCount("two"),null,"a word is not a bonus");
+  eq(parseCount("-1"),null,"a negative bonus is refused");
+  eq(itemFrom({name:" Augmentin ",qty:"10",bonus:"2"}),{name:"Augmentin",qty:10,bonus:2},
+     "the quantity box and the bonus box build one item");
+  eq(itemFrom({name:"Panadol",qty:"20",bonus:""}),{name:"Panadol",qty:20,bonus:0},
+     "an empty bonus box is no bonus, not an error");
+  eq(itemFrom({name:"Panadol",qty:"10+2",bonus:""}),{name:"Panadol",qty:10,bonus:2},
+     "a 10+2 pasted into the quantity box still splits itself");
+  eq(itemFrom({name:"Panadol",qty:"10+2",bonus:"3"}),{name:"Panadol",qty:10,bonus:3},
+     "the bonus box wins over a pasted one");
+  eq(itemFrom({}),null,"a blank row is skipped, not an error");
+  eq(itemFrom({name:"",qty:"10",bonus:""}).err,"noname","a quantity with no item name is caught");
+  eq(itemFrom({name:"x",qty:"",bonus:""}).err,"qty","a named item with no quantity is caught");
+  eq(itemFrom({name:"x",qty:"10",bonus:"two"}).err,"bonus","a word in the bonus box is caught");
+
+  eq(waNumber("0770 123 4567"),"9647701234567","an Iraqi mobile becomes a WhatsApp number");
+  eq(waNumber("+964 770 123 4567"),"9647701234567","one already international is left alone");
+  eq(waNumber("009647701234567"),"9647701234567","the 00 dialling prefix is dropped");
+  eq(waNumber("07701234567","962"),"9627701234567","another country code works");
+  eq(waNumber(""),"964","an empty number degrades, it does not throw");
+  const wa = waText([fix[1]],"Al Noor");
+  eq(wa.indexOf("2026-10-20")>0,true,"the reminder says when the order was placed");
+  eq(wa.indexOf("2026-10-30")>0,true,"and the delivery date that was agreed");
+  eq(wa.indexOf("augmentin 625mg \u2014 5 + 1")>0,true,"and the item with its bonus");
+  eq(wa.indexOf("\u0628\u0648\u0646\u0635")>0,true,"the message is Arabic whatever language the app is in");
+  eq(waText([fix[0]],"").indexOf("\u060c \u0645\u0646")<0,true,"an unnamed pharmacy leaves no dangling comma");
+  eq(waText([{rep:{first:"Ali",last:""},items:[],created:""}],"X").split("\n").length,2,
+     "a rep with no orders still gets a greeting, not an empty reminder");
+  eq(waText([fix[0],fix[1]],"Al Noor").split("\n").length,9,
+     "two orders to one rep go in one message");
+  eq(waURL("07701234567","hi"),"https://wa.me/9647701234567?text=hi",
+     "the link carries the number and the message");
+  eq(waURL("07701234567","a b").indexOf("text=a%20b")>0,true,"the message is URL-encoded");
   return t;
 }
 /*endpure*/
@@ -455,16 +586,14 @@ const AR = {
  "Any QR code you keep at the counter works — a sticker, your licence card, a code you print once. The app remembers it and every rep scans that same code.":"أي رمز QR تحتفظ به عند الكاونتر يفي بالغرض: ملصق، أو بطاقة الإجازة، أو رمز تطبعه مرة واحدة. التطبيق يحفظه، ويمسحه كل مندوب في كل زيارة.",
  "Type a code instead":"أدخل الرمز يدوياً",
  "Skip — just log orders":"تخطَّ — سجّل الطلبات فقط",
- "Waiting":"بالانتظار", "Received":"مستلمة", "Reps":"المندوبون", "Summary":"الملخص",
+ "Waiting":"بالانتظار", "Received":"مستلمة", "Reps":"المندوبون",
  "Scan the pharmacy QR":"امسح رمز الصيدلية",
  "Open camera":"افتح الكاميرا",
  "Point at the pharmacy's QR code and take the photo.":"وجّه الكاميرا نحو رمز الصيدلية والتقط الصورة.",
  "Type the code":"أدخل الرمز",
  "New order":"طلب جديد", "+ New order":"+ طلب جديد",
  "Mobile number":"رقم الموبايل", "First name":"الاسم", "Last name":"اللقب",
- "Items — quantity + bonus":"المواد — الكمية + البونص",
  "Add another item":"أضف مادة أخرى",
- "Write the bonus the way you agreed it: <b>10+2</b> means 10 boxes plus 2 free.":"اكتب البونص كما اتفقتم عليه: <b>10+2</b> تعني 10 علب مع 2 مجاناً.",
  "Delivery date":"تاريخ التسليم", "Note (optional)":"ملاحظة (اختياري)",
  "Save order":"احفظ الطلب", "Cancel":"إلغاء",
  "Item name":"اسم المادة", "Remove item":"احذف المادة",
@@ -504,7 +633,6 @@ const AR = {
  "Enter the rep's mobile number — that is how orders are matched to them.":"أدخل رقم موبايل المندوب — به تُربط الطلبات باسمه.",
  "Enter the rep's first name.":"أدخل اسم المندوب.",
  "One line has a quantity but no item name.":"أحد السطور فيه كمية بلا اسم مادة.",
- "«{q}» is not a quantity. Write 10 or 10+2.":"«{q}» ليست كمية صحيحة. اكتب 10 أو 10+2.",
  "Add at least one item.":"أضف مادة واحدة على الأقل.",
  "Order saved for {name}.":"تم حفظ الطلب للمندوب {name}.",
  "Saved on this phone. It will sync when you are back online.":"حُفظ على هذا الجهاز، وسيُرفع عند عودة الإنترنت.",
@@ -548,7 +676,22 @@ const AR = {
  "Save the sign":"احفظ اللوحة",
  "Could not save the sign.":"تعذّر حفظ اللوحة.",
  "Print the counter sign":"اطبع لوحة الكاونتر",
- "This pharmacy has no code to print.":"لا يوجد رمز لهذه الصيدلية لطباعته."
+ "This pharmacy has no code to print.":"لا يوجد رمز لهذه الصيدلية لطباعته.",
+ "Main":"الرئيسية", "Dashboard":"لوحة الطلبات", "Items":"المواد",
+ "<b>Quantity</b> is what the pharmacy pays for. <b>Bonus</b> is what comes free — leave it empty when there is none.":"<b>الكمية</b> هي ما تدفع الصيدلية ثمنه، و<b>البونص</b> هو ما يأتي مجاناً — اتركه فارغاً إن لم يكن هناك بونص.",
+ "«{q}» is not a quantity. Write a number like 10.":"«{q}» ليست كمية. اكتب رقماً مثل 10.",
+ "«{q}» is not a bonus. Write a number like 2, or leave it empty.":"«{q}» ليس بونصاً. اكتب رقماً مثل 2، أو اتركه فارغاً.",
+ "ordered {d}":"طُلب {d}",
+ "WhatsApp reminder":"تذكير واتساب",
+ "This pharmacy's barcode":"باركود هذه الصيدلية",
+ "Every rep scans this. Their order lands here, in this dashboard.":"يمسحه كل مندوب، فيصل طلبه إلى هذه اللوحة.",
+ "Where this data is kept":"أين تُحفظ هذه البيانات",
+ "Your orders are on this phone only. Nothing is uploaded and there is no shared database, so no other pharmacy can see them.":"طلباتك محفوظة على هذا الهاتف فقط. لا يُرفع شيء إلى الإنترنت ولا توجد قاعدة بيانات مشتركة، فلا تستطيع أي صيدلية أخرى الاطلاع عليها.",
+ "Your orders are on this phone and in your own private copy, which only you can open.":"طلباتك محفوظة على هذا الهاتف وفي نسختك الخاصة التي لا يفتحها سواك.",
+ "A rep who scans your barcode can only send you an order. They never see this log.":"المندوب الذي يمسح الباركود يستطيع إرسال طلب فقط، ولا يرى هذا السجل أبداً.",
+ "Erase everything on this phone":"امسح كل شيء من هذا الهاتف",
+ "Erase everything?":"أمسح كل شيء؟",
+ "Erased. This phone holds nothing now.":"تم المسح. لم يعد على هذا الهاتف أي بيانات."
 };
 const MISS = new Set();
 let lang = "en";
@@ -612,7 +755,8 @@ async function push(){                                  // retry anything not ye
   }
 }
 async function putOrder(o){
-  o._dirty = true; S.orders[o.id] = o; save(); render();
+  if(db) o._dirty = true;          // with no db there is nothing to sync to: this phone IS the record
+  S.orders[o.id] = o; save(); render();
   if(!db) return;
   try{ const {_dirty, ...body} = o; await db.doc("orders/"+o.id).set(body); delete o._dirty; save() }
   catch(e){ flash(T("Saved on this phone. It will sync when you are back online.")) }
@@ -662,11 +806,43 @@ async function scan(){
 }
 
 /* ---------- screens ---------- */
-function show(name){
+const SCREENS = ["setup","list","dash","gate","form","check","qr","away"];
+// ponytail: a two-pointer array, not the History API — the app has no URLs to push.
+// setup, the self-check and the rep's own home are never destinations to come back to.
+const NOHIST = {setup:1, check:1, away:1};
+let hist = [], hAt = -1;
+
+function show(name, replay){
   screen = name;
-  for(const s of ["setup","list","gate","form","check","qr","away"]) $(s).hidden = (s !== name);
-  $("bar").hidden = (name !== "list") || !S.pharmacy;
+  for(const s of SCREENS) $(s).hidden = (s !== name);
+  $("bar").hidden = !(S.pharmacy && !repMode && (name === "list" || name === "dash"));
+  if(!replay && !NOHIST[name] && hist[hAt] !== name){
+    hist = hist.slice(0, hAt+1); hist.push(name); hAt = hist.length - 1;
+  }
+  renderHead(); renderNav();
   window.scrollTo(0,0);
+}
+function renderHead(){
+  $("phname").textContent = S.pharmacy?.name || T("Pharmacy Order Log");
+  $("phsub").textContent = S.pharmacy ? T("{n} waiting").replace("{n}", orders("waiting").length) : "";
+}
+function renderNav(){
+  const on = !!S.pharmacy && !repMode && !NOHIST[screen];
+  $("nav").hidden = !on;
+  if(!on) return;
+  const rtl = document.documentElement.dir === "rtl";    // the arrows point at history, not at text
+  $("navBack").textContent = rtl ? "\u203a" : "\u2039";
+  $("navFwd").textContent  = rtl ? "\u2039" : "\u203a";
+  $("navBack").disabled = hAt <= 0;
+  $("navFwd").disabled = hAt >= hist.length - 1;
+  $("navMain").setAttribute("aria-current", screen === "list");
+  $("navDash").setAttribute("aria-current", screen === "dash");
+}
+function navTo(i){
+  if(i < 0 || i >= hist.length) return;
+  hAt = i;
+  show(hist[i], 1);
+  if(hist[i] === "list") renderList(); else if(hist[i] === "dash") renderDash();
 }
 function render(){
   if(location.hash === "#selfcheck") return renderCheck();
@@ -676,14 +852,23 @@ function render(){
     if(screen === "away") repHome(handoff?.code || null, handoff?.name || "");
     return;
   }
-  const waiting = orders("waiting");
-  $("phname").textContent = S.pharmacy?.name || T("Pharmacy Order Log");
-  $("phsub").textContent = S.pharmacy ? T("{n} waiting").replace("{n}", waiting.length) : "";
+  renderHead();
   if(!S.pharmacy) return show("setup");
   if(screen === "list" || screen === "setup"){ show("list"); renderList() }
+  else if(screen === "dash") renderDash();
+  else renderNav();
+}
+// Each pharmacy's dashboard is its own. An order is stamped with the code it was taken
+// under, so a phone given a new code does not inherit the last one's log.
+function myOrders(){ return ownOrders(Object.values(S.orders), S.pharmacy?.code) }
+// A rep's number, tappable straight into WhatsApp with the reminder already written.
+function waA(list, cls, label){
+  const m = list[0].rep.mobile;
+  return '<a class="'+cls+'" target="_blank" rel="noopener" href="'
+    + esc(waURL(m, waText(list, S.pharmacy?.name || ""))) + '">' + esc(label || m) + '</a>';
 }
 function orders(which){
-  const all = Object.values(S.orders);
+  const all = myOrders();
   const t = todayISO();
   return all.filter(o => which==="waiting" ? o.status!=="received" : o.status==="received")
             .sort((a,b)=> which==="waiting"
@@ -692,9 +877,9 @@ function orders(which){
 }
 function renderList(){
   for(const b of document.querySelectorAll(".tab")) b.setAttribute("aria-selected", b.dataset.view===view);
-  $("rows").innerHTML = view==="reps" ? repsHTML()
-    : view==="summary" ? summaryHTML() : ordersHTML(view);
+  $("rows").innerHTML = view==="reps" ? repsHTML() : ordersHTML(view);
 }
+function renderDash(){ $("dash").innerHTML = dashHTML() }
 function ordersHTML(which){
   const list = orders(which), t = todayISO();
   if(!list.length) return '<div class="empty">'+T(which==="waiting"
@@ -704,44 +889,85 @@ function ordersHTML(which){
     const st = o.status==="received" ? "done" : dueState(o.due,t);
     const label = o.status==="received" ? T("Received") : dueLabel(o.due,t,T);
     const when = o.status==="received" ? (o.receivedOn||"") : (o.due||"");
+    const on = String(o.created||"").slice(0,10);
     return '<article class="card '+(st==="late"||st==="today"?st:"")+'">'
-      + '<div class="rowtop"><div><div class="rep">'+esc(o.rep.first+" "+o.rep.last).trim()+'</div>'
-      + '<div class="mob">'+esc(o.rep.mobile)+'</div></div>'
+      + '<div class="rowtop"><div><div class="rep">'+esc((o.rep.first+" "+o.rep.last).trim())+'</div>'
+      + waA([o],"mob wa")+'</div>'
       + '<span class="chip '+st+'">'+esc(label)
       + (when ? ' · <span class="when">'+esc(when)+'</span>' : '')+'</span></div>'
       + '<ul class="items">'+o.items.map(i=>'<li><span class="nm">'+esc(i.name)+'</span>'
         + '<span class="q">'+fmtQty(i)+'</span></li>').join("")+'</ul>'
-      + '<p class="note">'+T("{n} units in total").replace("{n}",units(o.items))+(o.note?' · '+esc(o.note):'')
+      + '<p class="note">'+T("{n} units in total").replace("{n}",units(o.items))
+      + (on ? ' · '+T("ordered {d}").replace("{d}",'<span class="when">'+esc(on)+'</span>') : '')
+      + (o.note?' · '+esc(o.note):'')
       + (o._dirty?' · '+T("not synced yet"):'')+'</p>'
       + '<div class="acts">'
       + (o.status==="received" ? '<button class="btn" data-undo="'+o.id+'">'+T("Move back to waiting")+'</button>'
                               : '<button class="btn pri" data-got="'+o.id+'">'+T("Mark received")+'</button>')
-      + '<button class="btn" data-copy="'+esc(o.rep.mobile)+'">'+T("Copy number")+'</button>'
+      + waA([o],"btn",T("WhatsApp reminder"))
       + '<button class="btn danger" data-del="'+o.id+'">'+T("Delete")+'</button></div></article>';
   }).join("");
 }
 function repsHTML(){
   const reps = Object.values(S.reps).sort((a,b)=>(a.first||"").localeCompare(b.first||""));
   if(!reps.length) return '<div class="empty">'+T("Reps are saved automatically with their first order.")+'</div>';
-  const all = Object.values(S.orders);
+  const all = myOrders();
   return reps.map(r=>{
     const mine = all.filter(o=>o.rep.mobile===r.mobile);
-    const open = mine.filter(o=>o.status!=="received").length;
+    const open = mine.filter(o=>o.status!=="received");
+    // one message about everything still owed, or a bare greeting for a rep with nothing open
+    const forWa = open.length ? open : (mine.length ? mine : [{rep:r, items:[], created:""}]);
     return '<article class="card"><div class="rowtop"><div>'
       + '<div class="rep">'+esc((r.first+" "+r.last).trim())+'</div>'
-      + '<div class="mob">'+esc(r.mobile)+'</div></div>'
+      + waA(forWa,"mob wa")+'</div>'
       + '<span class="chip">'+T("{n} orders").replace("{n}",mine.length)+'</span></div>'
-      + '<p class="note">'+(open ? T("{n} waiting").replace("{n}",open) : T("nothing waiting"))+'</p>'
-      + '<div class="acts"><button class="btn" data-copy="'+esc(r.mobile)+'">'+T("Copy number")+'</button></div></article>';
+      + '<p class="note">'+(open.length ? T("{n} waiting").replace("{n}",open.length) : T("nothing waiting"))+'</p>'
+      + '<div class="acts">'+waA(forWa,"btn",T("WhatsApp reminder"))
+      + '<button class="btn" data-copy="'+esc(r.mobile)+'">'+T("Copy number")+'</button></div></article>';
   }).join("");
 }
-function summaryHTML(){
-  const list = Object.values(S.orders);
-  // the sign has to stay reachable on day one, before there is anything to summarise
-  const sign = S.pharmacy?.code
-    ? '<button class="btn" data-qr="1">'+T("Print the counter sign")+'</button>' : '';
-  if(!list.length) return '<div class="empty">'+T("Nothing to summarise yet. Log an order first.")+'</div>'
-    + (sign ? '<div class="acts">'+sign+'</div>' : '');
+// The pharmacy's own code, small, drawn fresh each time the dashboard renders.
+function miniSign(){
+  try{
+    const q = qrcode(0,"M");
+    q.addData(signURL(appBase(), S.pharmacy.code, S.pharmacy.name)); q.make();
+    return qrSvg(q.getModuleCount(), q.isDark);
+  }catch(e){ return "" }
+}
+function barcodeCard(){
+  if(!S.pharmacy?.code) return "";
+  return '<div class="panel qrpanel"><div class="sign mini">'+miniSign()+'</div>'
+    + '<div class="qrmeta"><h3>'+T("This pharmacy's barcode")+'</h3>'
+    + '<p class="code">'+esc(S.pharmacy.code)+'</p>'
+    + '<p class="note">'+T("Every rep scans this. Their order lands here, in this dashboard.")+'</p>'
+    + '<button class="btn" data-qr="1">'+T("Print the counter sign")+'</button></div></div>';
+}
+// Plain words about where the orders actually are, plus the one control that backs it up.
+function privacyPanel(){
+  return '<div class="panel"><h3>' + T("Where this data is kept") + '</h3>'
+    + '<p class="note">' + T(db
+        ? "Your orders are on this phone and in your own private copy, which only you can open."
+        : "Your orders are on this phone only. Nothing is uploaded and there is no shared database, so no other pharmacy can see them.")
+      + '</p>'
+    + '<p class="note">' + T("A rep who scans your barcode can only send you an order. They never see this log.") + '</p>'
+    + '<div class="acts"><button class="btn danger" data-erase="1">'
+    + T("Erase everything on this phone") + '</button></div></div>';
+}
+async function eraseAll(){
+  if(db) for(const id of Object.keys(S.orders)) try{ await db.doc("orders/"+id).delete() }catch(e){}
+  if(db) for(const k of ["settings/pharmacy","settings/reps"]) try{ await db.doc(k).delete() }catch(e){}
+  S = {pharmacy:null, reps:{}, orders:{}, handed:{}};
+  try{ localStorage.removeItem(LS) }catch(e){}
+  hist = []; hAt = -1; repMode = false; handoff = null; view = "waiting"; screen = "setup";
+  render();
+  flash(T("Erased. This phone holds nothing now."));
+}
+function dashHTML(){
+  const list = myOrders();
+  // the barcode has to be here on day one, before there is anything to summarise
+  if(!list.length) return barcodeCard()
+    + '<div class="empty">'+T("Nothing to summarise yet. Log an order first.")+'</div>'
+    + privacyPanel();
   const s = summarise(list, todayISO());
   const maxUnits = Math.max(...s.reps.map(r=>r.units), 1);
   const maxQty = Math.max(...s.items.map(i=>i.qty), 1);
@@ -753,7 +979,7 @@ function summaryHTML(){
   ].map(t=>'<div class="tile '+t[0]+'"><b>'+t[1]+'</b><span>'+t[2]+'</span></div>').join("");
 
   const repRows = s.reps.map(r=>'<tr><td class="who">'+esc(r.name)
-    + '<div class="sub2">'+esc(r.mobile)+'</div>'
+    + '<div class="sub2">'+waA(list.filter(o=>o.rep.mobile===r.mobile),"wa")+'</div>'
     + '<div class="mag" style="width:'+Math.round(100*r.units/maxUnits)+'%" '
     + 'title="'+T("{n} units of {max} from the busiest rep")
         .replace("{n}",r.units).replace("{max}",maxUnits)+'"></div></td>'
@@ -768,7 +994,7 @@ function summaryHTML(){
     + '<td class="n">'+i.bonus+'</td></tr>').join("");
 
   const th = k => '<th class="n">'+T(k)+'</th>';
-  return '<div class="tiles">'+tiles+'</div>'
+  return barcodeCard() + '<div class="tiles">'+tiles+'</div>'
     + '<div class="panel"><h3>'+T("By rep — bar shows units ordered")+'</h3><table>'
     + '<thead><tr><th>'+T("Rep")+'</th>'+th("Orders")+th("Units")+th("Bonus")+th("Open")
     + '</tr></thead><tbody>'+repRows+'</tbody></table></div>'
@@ -778,10 +1004,10 @@ function summaryHTML(){
     + (s.items.length>12 ? '<p class="note">'+T("{n} more items not shown")
         .replace("{n}",s.items.length-12)+'</p>' : '')
     + '</div><div class="acts"><button class="btn" data-export="1">'
-    + T("Export every order as CSV")+'</button>'+sign+'</div>';
+    + T("Export every order as CSV")+'</button></div>' + privacyPanel();
 }
 async function exportCSV(){
-  const list = Object.values(S.orders)
+  const list = myOrders()
     .sort((a,b)=>String(a.due||"9999").localeCompare(String(b.due||"9999")));
   if(!list.length) return flash(T("Nothing to export yet."), true);
   const name = "orders-"+todayISO()+".csv";
@@ -821,11 +1047,15 @@ function renderCheck(){
 
 /* ---------- form ---------- */
 function renderItems(){
+  // quantity and bonus are their own boxes: nobody has to remember the "10+2" shorthand
+  const box = (it,n,f,lab,ph) => '<label class="mini">'+T(lab)
+    + '<input class="q" dir="ltr" inputmode="numeric" placeholder="'+ph+'" value="'
+    + esc(it[f]==null?"":it[f])+'" data-n="'+n+'" data-f="'+f+'"></label>';
   $("items").innerHTML = draftItems.map((it,n)=>
     '<div class="itemrow"><input class="nm" placeholder="'+T("Item name")+'" value="'+esc(it.name||"")+'" data-n="'+n+'" data-f="name">'
-    + '<input class="q" dir="ltr" placeholder="10+2" inputmode="text" value="'+esc(it.qty||"")+'" data-n="'+n+'" data-f="qty">'
+    + '<div class="qs">'+box(it,n,"qty","Quantity","10")+box(it,n,"bonus","Bonus","2")
     + (draftItems.length>1?'<button class="btn x" data-rm="'+n+'" aria-label="'+T("Remove item")+'">&times;</button>':'')
-    + '</div>').join("");
+    + '</div></div>').join("");
 }
 function openForm(){
   draftItems = [{}];
@@ -850,12 +1080,15 @@ async function saveOrder(){
   if(mobile.length < 7) return flash(T("Enter the rep's mobile number — that is how orders are matched to them."), true);
   if(!first) return flash(T("Enter the rep's first name."), true);
   const items = [];
-  for(const it of draftItems){
-    if(!it.name && !it.qty) continue;
-    if(!it.name) return flash(T("One line has a quantity but no item name."), true);
-    const q = parseQty(it.qty);
-    if(!q) return flash(T("\u00ab{q}\u00bb is not a quantity. Write 10 or 10+2.").replace("{q}", it.qty), true);
-    items.push({name:it.name.trim(), qty:q.qty, bonus:q.bonus});
+  for(const row of draftItems){
+    const it = itemFrom(row);
+    if(!it) continue;
+    if(it.err === "noname") return flash(T("One line has a quantity but no item name."), true);
+    if(it.err === "qty") return flash(T("\u00ab{q}\u00bb is not a quantity. Write a number like 10.")
+      .replace("{q}", it.v), true);
+    if(it.err === "bonus") return flash(T("\u00ab{q}\u00bb is not a bonus. Write a number like 2, or leave it empty.")
+      .replace("{q}", it.v), true);
+    items.push(it);
   }
   if(!items.length) return flash(T("Add at least one item."), true);
   S.reps[mobile] = {mobile, first, last};     // on a rep's own phone this is them, so next time autofills
@@ -863,7 +1096,7 @@ async function saveOrder(){
   if(handoff) return showHandoff({rep:{mobile, first, last}, items,
     due:$("due").value || "", note:$("note").value.trim()});
   await putOrder({id:"o"+Date.now().toString(36)+Math.random().toString(36).slice(2,6),
-    created:new Date().toISOString(), rep:{mobile,first,last}, items,
+    created:new Date().toISOString(), code:S.pharmacy?.code || "", rep:{mobile,first,last}, items,
     due:$("due").value || "", note:$("note").value.trim(), status:"pending"});
   view = "waiting"; show("list"); renderList();
   flash(T("Order saved for {name}.").replace("{name}", first));
@@ -901,7 +1134,7 @@ async function takeHandoff(o){
   S.reps[o.rep.mobile] = o.rep;
   putSettings();
   await putOrder({id:"o"+Date.now().toString(36)+Math.random().toString(36).slice(2,6),
-    created:new Date().toISOString(), rep:o.rep, items:o.items,
+    created:new Date().toISOString(), code:S.pharmacy.code || "", rep:o.rep, items:o.items,
     due:o.due, note:o.note, status:"pending"});
   view = "waiting"; screen = "list"; show("list"); renderList();
   flash(T("Order taken from {name}.").replace("{name}", o.rep.first || o.rep.mobile));
@@ -925,7 +1158,7 @@ function fromLink(){
   const code = codeFromScan(location.hash), name = linkField(location.hash,"n") || "";
   history.replaceState(null, "", location.pathname + location.search);   // survive a reload
   if(S.pharmacy && S.pharmacy.code === code){ repMode = false; handoff = null; openForm() }
-  else repHome(code, name);
+  else { repMode = true; handoff = {code, name}; openForm() }   // straight to the order page
   return true;
 }
 
@@ -1112,11 +1345,11 @@ function showQR(){
     try{ await dl.save({filename:"counter-sign.svg", data:$("qr").querySelector("svg").outerHTML}) }
     catch(e){ if(e?.code !== "declined") flash(T("Could not save the sign."), true) }
   };
-  $("qrBack").onclick = () => { screen = "list"; render() };
+  $("qrBack").onclick = () => { show("dash"); renderDash() };
   show("qr");
 }
 
-$("rows").addEventListener("click", async e=>{
+async function onCardClick(e){
   const b = e.target.closest("button"); if(!b) return;
   const d = b.dataset;
   if(d.got){ const o = {...S.orders[d.got], status:"received", receivedOn:todayISO()}; putOrder(o) }
@@ -1125,13 +1358,23 @@ $("rows").addEventListener("click", async e=>{
     if(b.textContent !== T("Delete?")){ b.textContent = T("Delete?"); return }
     dropOrder(d.del);
   }
+  else if(d.erase){
+    if(b.textContent !== T("Erase everything?")){ b.textContent = T("Erase everything?"); return }
+    eraseAll();
+  }
   else if(d.export){ exportCSV() }
   else if(d.qr){ showQR() }
   else if(d.copy){
     try{ await navigator.clipboard.writeText(d.copy); flash(T("Copied {n}").replace("{n}", d.copy)) }
     catch(err){ flash(T("Number: {n}").replace("{n}", d.copy)) }
   }
-});
+}
+$("rows").addEventListener("click", onCardClick);
+$("dash").addEventListener("click", onCardClick);
+$("navBack").onclick = () => navTo(hAt-1);
+$("navFwd").onclick  = () => navTo(hAt+1);
+$("navMain").onclick = () => { show("list"); renderList() };
+$("navDash").onclick = () => { show("dash"); renderDash() };
 for(const b of document.querySelectorAll(".tab"))
   b.onclick = () => { view = b.dataset.view; renderList() };
 
@@ -1147,7 +1390,7 @@ setLang(want);
 if(!fromLink() && !S.pharmacy && Object.keys(S.handed).length) repHome(null, "");
 connect();
 // a sign link opened while the app is already running changes the hash without reloading
-addEventListener("hashchange", fromLink);
+addEventListener("hashchange", () => { if(!fromLink()) render() });   // #selfcheck arrives this way too
 if("serviceWorker" in navigator && location.protocol.indexOf("http") === 0)
   navigator.serviceWorker.register("sw.js").catch(()=>{});   // absent inside Claude; harmless
 </script>

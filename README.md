@@ -4,7 +4,10 @@ A one-page app for a pharmacy to log what each medical rep orders: item, quantit
 bonus (`10+2`), delivery date, and whether it arrived. English and Arabic, RTL included.
 
 Every pharmacy gets **its own QR code automatically** at setup — type the name, print
-the counter sign. Re-print it any time from Summary → *Print the counter sign*.
+the counter sign. It sits at the top of that pharmacy's **Dashboard**, with the totals,
+the per-rep table and the per-item table under it; **Main** holds the order cards.
+`‹ ›` walk back and forward through the screens you have been on (a two-pointer array,
+not the History API — the app has no URLs to push).
 
 The sign holds a link (`…/#p=CODE&n=NAME`), not a bare code, so scanning it opens the
 app rather than showing raw text.
@@ -24,6 +27,31 @@ of the pharmacy screens, including on a language switch.
 
 Opened on the pharmacy's own phone the sign goes straight to a blank order instead,
 which is what the scan was for.
+
+**Quantity and bonus are separate boxes.** A `10+2` pasted into the quantity box still
+splits itself, so nothing that used to work stopped working.
+
+**Tapping a rep's number opens WhatsApp** with the reminder already written — in Arabic
+whatever language the app is in, because the rep is the one reading it. It names every
+item, its bonus, the date the order was placed and the delivery date agreed. On the Reps
+tab one message covers everything that rep still owes. `waNumber` turns `07xx xxx xxxx`
+into `9647xx…` and leaves a number that already carries the country code alone.
+
+## Who can see what
+
+- An order is stamped with the pharmacy code it was taken under, and `ownOrders()` is the
+  only door into the list, the dashboard and the export. One pharmacy's log cannot show
+  another's orders even if both ever landed on one phone.
+- A rep who scans the counter sign gets a blank order form and nothing else — no list,
+  no dashboard, no nav. The sign carries a code and a name, which let you *send* an
+  order, never read one.
+- `unpackOrder` refuses an order filled in for a different pharmacy's code.
+- The orders live in `localStorage` on the pharmacy's own phone. On the hosted site
+  nothing is uploaded; there is no account and no shared database. Inside the Claude
+  artifact they are also mirrored to that artifact's own `db`, declared `read:"admin"`
+  so a shared link cannot read them.
+- Dashboard → **Erase everything on this phone** wipes the lot, two taps, and deletes the
+  `db` copies too when there is one. That is the control the privacy claim rests on.
 
 Two limits worth knowing. The hand-off QR is capped at **77 modules** (`HANDOFF_MAX_MODULES`)
 — not because more will not encode, but because a camera reading another phone's screen
